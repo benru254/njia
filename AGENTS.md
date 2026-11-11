@@ -1,41 +1,43 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+# Rules for AI coding assistants working on Njia (GitHub Copilot, Claude, others)
 
-## Expo has changed — do not trust your training data
+Njia is an offline-first Android GPS trip recorder built with Expo (React Native) and TypeScript.
+The owner is not a career programmer. He tests the installed app and reports what he sees.
+Explain things in plain language and keep changes small and safe.
 
-Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
+## Check the installed versions before using an API
 
-1. Read the major version of the `expo` package in `package.json`.
-2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
-3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
+Expo changes its APIs between SDK versions. Before using any Expo or React Native API:
+
+1. Read the `expo` version in `package.json`.
+2. Read the type definitions in `node_modules/<package>/build/*.d.ts`, or the matching docs at
+   `https://docs.expo.dev/versions/v<major>.0.0/`. Do not answer from memory.
+
+Install packages with `npx expo install <package>` so versions match the SDK.
+
+## What must not be broken
+
+- **`index.ts` imports `./src/tracking/task` first.** The background GPS job must be registered before anything else. Do not reorder.
+- **`src/core/` stays pure TypeScript.** No `react-native`, `expo-*` or browser imports there. The phone app, the viewer and the tests all share it.
+- **The database only grows.** Add tables with `CREATE TABLE IF NOT EXISTS` and columns with `ensureColumn()` in `src/data/db.ts`. Never drop, rename or reset. Real trips live on the owner's phone.
+- **Offline first.** Recording, saving, viewing the path, stops and stats must work with no network. Only the street-map background may need internet.
+- **Never commit recorded trips** (`.gpx`, `njia_*.json`). They show where a real person has been.
+- **Do not create or edit `android/` or `ios/` by hand.** They are generated. Native settings go in `app.config.js`.
+- **No Expo Router.** Navigation is a single state value in `App.tsx` on purpose (three screens).
+
+## How to work
+
+- Small files, one job each. New feature = new file where sensible.
+- Every screen sets explicit text and background colours from `src/theme.ts` (the app is dark-only).
+- After editing anything in `viewer/`, run `npm run build:viewer`. The output in `src/generated/` and `dist/` is generated: never edit it by hand.
+- Before saying a change is done, run `npm run check` (viewer build, type check, tests). Add a test in `tests/` for any change to `src/core/`.
+- The app cannot run in Expo Go (background location needs native code). Pushing to `main` builds an APK through `.github/workflows/build-apk.yml`; the owner installs that to test.
+- Error messages shown to the user must say what happened and what to do next, in plain words.
 
 ## Commands
 
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
-
-```bash
-npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
-npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
-npx expo-doctor             # diagnose dependency and config issues
-npx expo install --fix      # fix incompatible package versions
 ```
-
-Run lint and typecheck before declaring any task done.
-
-## Navigation & Routing
-
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
-
-## Building with EAS
-
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
-
-## Rules
-
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+npm install            # install + build viewer
+npm run check          # build viewer, type check, tests
+npm run build:viewer   # rebuild viewer only
+npm test               # tests only
+```

@@ -1,8 +1,7 @@
-import { registerRootComponent } from 'expo';
+// MUST stay first: registers the background GPS job before anything else runs.
+import './src/tracking/task';
 
+import { registerRootComponent } from 'expo';
 import App from './App';
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
 registerRootComponent(App);

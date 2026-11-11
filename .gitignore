@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Njia: built automatically by "npm install" / "npm run build:viewer"
+src/generated/
+
+# Never commit recorded trips (they show where you have been)
+*.gpx
+njia_*.json

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Njia trip viewer</title>
+<style>/*__MAPLIBRE_CSS__*/</style>
+<style>
+  :root {
+    --bg: #10151c;
+    --bg2: #171e27;
+    --line: #26303c;
+    --text: #e8edf3;
+    --muted: #8b98a8;
+    --accent: #ffb020;
+    --go: #1f9d55;
+    --end: #c2362f;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.35;
+    -webkit-tap-highlight-color: transparent;
+    overflow: hidden;
+  }
+  button, select, input {
+    font: inherit;
+    color: var(--text);
+    background-color: var(--bg2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  button { cursor: pointer; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  [hidden] { display: none !important; }
+
+  #app { height: 100%; display: flex; flex-direction: column; }
+
+  /* ---- Top bar (PC viewer only) ---- */
+  #top {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    color: var(--text);
+  }
+  .standalone #top { display: flex; }
+  #top .brand { font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
+  #top .name { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #top button { padding: 6px 12px; }
+
+  #main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  /* ---- Map ---- */
+  #mapwrap { position: relative; flex: 1; min-height: 34vh; background: #e6eaee; }
+  #map { position: absolute; inset: 0; }
+  .mapfail { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #26303c; background: #e6eaee; }
+  #mapstatus {
+    position: absolute; left: 8px; top: 46px;
+    background: rgba(16, 21, 28, 0.92); color: var(--text);
+    padding: 5px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; z-index: 3;
+  }
+  #legend {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px;
+    padding: 2px 14px 8px; font-size: 11px; color: var(--muted);
+  }
+  #legend .row { display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #legend .sw { width: 12px; height: 4px; border-radius: 2px; }
+  #legend .sw.gap { height: 0; border-top: 2px dashed #7a8794; background: none; }
+  #mapbtns { position: absolute; left: 8px; top: 8px; z-index: 2; display: flex; gap: 6px; }
+  #mapbtns button, #mapbtns select {
+    background-color: rgba(16, 21, 28, 0.92); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.12); padding: 6px 9px; font-size: 12px; border-radius: 8px;
+  }
+  #mapbtns select option { background-color: #10151c; color: #e8edf3; }
+
+  /* ---- Markers ---- */
+  .mk {
+    font: 600 12px system-ui, sans-serif; white-space: nowrap;
+    border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,0.45);
+    display: flex; align-items: center; gap: 5px; cursor: pointer;
+  }
+  .mk-stop { background: #10151c; color: #e8edf3; padding: 2px 8px 2px 2px; border: 1.5px solid #ffffff; }
+  .mk-stop b {
+    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent); color: #10151c; font-size: 11px;
+  }
+  .mk-start { background: var(--go); color: #ffffff; padding: 3px 9px; border: 1.5px solid #ffffff; }
+  .mk-end { background: var(--end); color: #ffffff; padding: 3px 9px; border: 1.5px solid #ffffff; }
+  .mk-cursor {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent); border: 3px solid #ffffff;
+    box-shadow: 0 0 0 2px rgba(16,21,28,0.75), 0 2px 6px rgba(0,0,0,0.5);
+    position: relative; pointer-events: none;
+  }
+  .mk-cursor i {
+    position: absolute; left: 50%; top: -15px; margin-left: -7px;
+    border-left: 7px solid transparent; border-right: 7px solid transparent;
+    border-bottom: 11px solid #10151c;
+    filter: drop-shadow(0 0 1px #ffffff) drop-shadow(0 0 1px #ffffff);
+  }
+
+  /* ---- Panel ---- */
+  #panel { background: var(--bg); color: var(--text); border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  #now { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; padding: 10px 14px 4px; align-items: end; }
+  #now-speed { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
+  #now-speed small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  #now-mid { min-width: 0; }
+  #now-state { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #now-state.stopped { color: var(--accent); }
+  #now-state.nodata { color: var(--muted); }
+  #now-extra { grid-column: 1 / -1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #now-right { text-align: right; }
+  #now-time { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+  #now-dir { font-size: 12px; color: var(--muted); display: flex; gap: 5px; justify-content: flex-end; align-items: center; }
+  #now-dir svg { width: 14px; height: 14px; transition: transform 0.15s linear; }
+
+  #chart { display: block; width: 100%; height: 84px; touch-action: none; cursor: ew-resize; }
+  #seek { -webkit-appearance: none; appearance: none; display: block; width: calc(100% - 42px); margin: 2px 8px 0 34px; height: 22px; background: transparent; border: 0; padding: 0; }
+  #seek::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 2px; }
+  #seek::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -7px; border-radius: 50%; background: var(--accent); border: 2px solid #ffffff; }
+  #seek::-moz-range-track { height: 4px; background: var(--line); border-radius: 2px; }
+  #seek::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid #ffffff; }
+
+  #transport { display: flex; align-items: center; gap: 8px; padding: 6px 14px 10px; }
+  #transport button { height: 38px; min-width: 42px; padding: 0 10px; display: grid; place-items: center; }
+  #transport button svg { width: 16px; height: 16px; fill: currentColor; }
+  #btn-play { background-color: var(--accent); color: #10151c; border-color: var(--accent); min-width: 56px; }
+  #rate { height: 38px; padding: 0 6px; background-color: var(--bg2); color: var(--text); }
+  #rate option, #minstop option { background-color: #171e27; color: #e8edf3; }
+  #transport .sp { flex: 1; }
+  #btn-details { color: var(--text); }
+
+  #details { border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; max-height: 42vh; }
+  #tabs { display: flex; }
+  #tabs button { flex: 1; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background-color: var(--bg); color: var(--muted); padding: 10px 6px; font-weight: 600; }
+  #tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  #tabbody { overflow-y: auto; padding: 4px 14px 14px; -webkit-overflow-scrolling: touch; }
+
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .stat { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+  .note { font-size: 12px; color: var(--muted); padding-top: 10px; }
+  .opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0 2px; color: var(--text); }
+  .opt select { padding: 6px 8px; background-color: var(--bg2); color: var(--text); }
+
+  .ev { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background-color: var(--bg); color: var(--text); }
+  .ev:active, .ev.on { background-color: var(--bg2); }
+  .ev .badge { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; background: var(--accent); color: #10151c; }
+  .ev .badge.s { background: var(--go); color: #ffffff; }
+  .ev .badge.e { background: var(--end); color: #ffffff; }
+  .ev .badge.g { background: var(--line); color: var(--muted); }
+  .ev .what { flex: 1; min-width: 0; }
+  .ev .what div:first-child { font-weight: 600; color: var(--text); }
+  .ev .what div:last-child { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ev .dur { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+
+  /* ---- Empty state (PC viewer before a file is opened) ---- */
+  #empty { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: var(--bg); color: var(--text); padding: 24px; }
+  #empty .box { max-width: 460px; text-align: center; border: 2px dashed var(--line); border-radius: 16px; padding: 34px 26px; }
+  #empty.over .box { border-color: var(--accent); }
+  #empty h1 { margin: 0 0 6px; font-size: 22px; color: var(--text); }
+  #empty p { color: var(--muted); margin: 0 0 18px; }
+  #empty button { padding: 10px 16px; margin: 4px; }
+  #empty button.primary { background-color: var(--accent); color: #10151c; border-color: var(--accent); font-weight: 700; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9; background: #c2362f; color: #ffffff; padding: 10px 14px; border-radius: 10px; max-width: 90vw; }
+
+  /* ---- Wide screens: panel on the left, details always open ---- */
+  @media (min-width: 900px) {
+    #main { flex-direction: row; }
+    #panel { order: -1; width: 390px; border-top: 0; border-right: 1px solid var(--line); }
+    #details { display: flex !important; max-height: none; flex: 1; }
+    #btn-details { display: none !important; }
+    #chart { height: 120px; }
+  }
+  .maplibregl-ctrl-attrib { font-size: 10px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <span class="brand">NJIA</span>
+    <span class="name" id="top-name">Trip viewer</span>
+    <button id="btn-open" type="button">Open trip file</button>
+  </header>
+
+  <div id="main">
+    <div id="mapwrap">
+      <div id="map"></div>
+      <div id="mapbtns">
+        <select id="basemap" aria-label="Map background">
+          <option value="light">Map: light</option>
+          <option value="streets">Map: streets</option>
+          <option value="plain">Map: none</option>
+        </select>
+        <button id="btn-fit" type="button">Whole trip</button>
+      </div>
+      <div id="mapstatus" hidden></div>
+    </div>
+
+    <section id="panel">
+      <div id="now">
+        <div id="now-speed">0<small>km/h</small></div>
+        <div id="now-mid">
+          <div id="now-state">–</div>
+        </div>
+        <div id="now-right">
+          <div id="now-time">--:--:--</div>
+          <div id="now-dir">
+            <svg viewBox="0 0 16 16" id="now-arrow"><path d="M8 1 L13 14 L8 11 L3 14 Z" fill="#ffb020"/></svg>
+            <span id="now-compass">–</span>
+          </div>
+        </div>
+        <div id="now-extra">–</div>
+      </div>
+      <div id="legend"></div>
+      <canvas id="chart"></canvas>
+      <input id="seek" type="range" min="0" max="10000" value="0" step="1" aria-label="Position in trip">
+      <div id="transport">
+        <button id="btn-prev" type="button" title="Previous stop" aria-label="Previous stop"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button>
+        <button id="btn-play" type="button" title="Play" aria-label="Play or pause"><svg viewBox="0 0 16 16" id="ico-play"><path d="M4 2l10 6-10 6z"/></svg></button>
+        <button id="btn-next" type="button" title="Next stop" aria-label="Next stop"><svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button>
+        <select id="rate" aria-label="Replay speed">
+          <option value="5">5×</option>
+          <option value="20">20×</option>
+          <option value="60">60×</option>
+          <option value="200">200×</option>
+          <option value="600">600×</option>
+        </select>
+        <span class="sp"></span>
+        <button id="btn-details" type="button">Details</button>
+      </div>
+      <div id="details" hidden>
+        <div id="tabs">
+          <button type="button" data-tab="summary" class="on">Summary</button>
+          <button type="button" data-tab="stops">Stops</button>
+        </div>
+        <div id="tabbody"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="empty" hidden>
+    <div class="box">
+      <h1>Open a trip</h1>
+      <p>Drop a trip file here, or choose one. Works with Njia backup files (.json) and GPX files (.gpx). Nothing is uploaded: the file stays on this computer.</p>
+      <button class="primary" id="btn-choose" type="button">Choose file</button>
+      <button id="btn-demo" type="button">Show a demo trip</button>
+    </div>
+  </div>
+  <input id="file" type="file" accept=".json,.gpx,application/json,application/gpx+xml" hidden>
+  <div id="toast" hidden></div>
+</div>
+
+<script>/*__MAPLIBRE_JS__*/</script>
+<script>/*__NJIA_DATA__*/</script>
+<script>/*__APP_JS__*/</script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+# Builds the installable Android app (APK) and publishes it under "Releases".
+# Runs by itself every time code is pushed to the main branch.
+# You can also start it by hand: GitHub > Actions > Build Android APK > Run workflow.
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+      CI: '1'
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install packages (also builds the map viewer)
+        run: npm ci
+
+      - name: Check the code and run the tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build the APK
+        working-directory: android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a --no-daemon --stacktrace
+
+      - name: Collect the files
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/njia-1.0.${BUILD_NUMBER}.apk"
+          cp dist/njia-viewer.html out/njia-viewer.html
+          ls -la out
+
+      - name: Keep a copy on the workflow page
+        uses: actions/upload-artifact@v4
+        with:
+          name: njia-1.0.${{ github.run_number }}
+          path: out/
+          retention-days: 30
+
+      - name: Publish under Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v1.0.${BUILD_NUMBER}" out/* \
+            --title "Njia 1.0.${BUILD_NUMBER}" \
+            --notes "**Phone:** download \`njia-1.0.${BUILD_NUMBER}.apk\` and open it to install (it updates the older version, your trips are kept).
+
+          **PC:** download \`njia-viewer.html\` and open it in Chrome or Edge to view trip files.
+
+          Built from commit ${GITHUB_SHA::7}."
