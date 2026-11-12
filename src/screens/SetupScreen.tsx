@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn } from '../components/Btn';
+import { DEST_MIN_CHOICES } from '../core/segment';
+import { DEFAULT_SETTINGS, MODE_LABEL, Place, TravelMode, TripSettings } from '../core/types';
+import { rebuildAllLegs } from '../data/legs';
+import { deletePlace, listPlaces } from '../data/places';
+import { getSettings, setDestMinS, setVehicle } from '../data/settings';
 import { getActiveTripId } from '../data/trips';
 import { C, S } from '../theme';
 import {
@@ -16,6 +21,38 @@ import { INTERVAL_CHOICES, getIntervalS, setIntervalS } from '../tracking/record
 
 interface Props {
   onBack: () => void;
+}
+
+const DEST_HINTS: Record<number, string> = {
+  180: 'Catches quick drop-offs. More traffic jams may be counted by mistake.',
+  300: 'Recommended. Short stops and most jams stay inside the trip.',
+  420: 'Fewer trips. Quick drop-offs need you to walk away and back.',
+  600: 'Only long stays count. Best for long drives with heavy traffic.',
+};
+const VEHICLES: TravelMode[] = ['motorbike', 'car', 'matatu', 'other'];
+
+interface ChoiceProps {
+  on: boolean;
+  label: string;
+  hint?: string;
+  onPress: () => void;
+}
+
+function Choice({ on, label, hint, onPress }: ChoiceProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.choice, on && styles.choiceOn]}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: on }}
+    >
+      <View style={[styles.radio, on && styles.radioOn]}>{on ? <View style={styles.radioDot} /> : null}</View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.choiceLabel}>{label}</Text>
+        {hint ? <Text style={styles.choiceHint}>{hint}</Text> : null}
+      </View>
+    </Pressable>
+  );
 }
 
 interface StepProps {
@@ -46,12 +83,37 @@ export function SetupScreen({ onBack }: Props) {
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [interval, setIntervalState] = useState(3);
   const [recording, setRecording] = useState(false);
+  const [trip, setTrip] = useState<TripSettings>(DEFAULT_SETTINGS);
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [working, setWorking] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setStatus(await getSetupStatus());
     setIntervalState(await getIntervalS());
     setRecording((await getActiveTripId()) != null);
+    setTrip(await getSettings());
+    setPlaces(await listPlaces());
   }, []);
+
+  /** Save a change that affects how trips are cut, then redo the trip list. */
+  const redo = async (label: string, job: () => Promise<void>) => {
+    setWorking(label);
+    try {
+      await job();
+      await rebuildAllLegs();
+    } catch (err) {
+      Alert.alert('Could not save', String((err as Error)?.message || err));
+    }
+    setWorking(null);
+    refresh();
+  };
+
+  const removePlace = (p: Place) => {
+    Alert.alert(`Forget "${p.name}"?`, 'Stops there will be shown as a letter again. Your trips are kept.', [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Forget', style: 'destructive', onPress: () => redo('Updating trips…', () => deletePlace(p.id)) },
+    ]);
+  };
 
   useEffect(() => {
     refresh();
@@ -136,29 +198,79 @@ export function SetupScreen({ onBack }: Props) {
           </Text>
         </View>
 
+        <Text style={[styles.section, { marginTop: 28 }]}>When does a stop end a trip?</Text>
+        <Text style={styles.intro}>
+          A stop this long becomes a destination: one trip ends there and the next begins. Shorter stops stay inside
+          the trip as a pause or traffic. A stop of 3+ minutes also counts if you walked away from the vehicle and
+          came back, and 2+ minutes counts at a place you named.
+        </Text>
+        {working ? (
+          <View style={styles.working}>
+            <ActivityIndicator color={C.accent} />
+            <Text style={styles.workingText}>{working}</Text>
+          </View>
+        ) : null}
+        {DEST_MIN_CHOICES.map((sec) => (
+          <Choice
+            key={sec}
+            on={sec === trip.destMinS}
+            label={`${sec / 60} minutes`}
+            hint={DEST_HINTS[sec]}
+            onPress={() => {
+              if (working || sec === trip.destMinS) return;
+              setTrip({ ...trip, destMinS: sec });
+              redo('Re-cutting your trips…', () => setDestMinS(sec));
+            }}
+          />
+        ))}
+
+        <Text style={[styles.section, { marginTop: 28 }]}>Your usual vehicle</Text>
+        <Text style={styles.intro}>
+          Walking is recognised by itself. Trips faster than walking are labelled with this vehicle; you can change any
+          single trip on its Trip tab.
+        </Text>
+        {VEHICLES.map((m) => (
+          <Choice
+            key={m}
+            on={m === trip.vehicle}
+            label={MODE_LABEL[m]}
+            onPress={() => {
+              if (working || m === trip.vehicle) return;
+              setTrip({ ...trip, vehicle: m });
+              redo('Updating trips…', () => setVehicle(m));
+            }}
+          />
+        ))}
+
+        <Text style={[styles.section, { marginTop: 28 }]}>Named places</Text>
+        <Text style={styles.intro}>
+          {places.length
+            ? 'Stops at these places show their name. To add one, open a trip and tap “Name this place” on a stop.'
+            : 'None yet. Open a trip and tap “Name this place” on a stop (for example Shop 2, Home, or a customer).'}
+        </Text>
+        {places.map((p) => (
+          <View key={String(p.id)} style={styles.placeRow}>
+            <Text style={styles.placeName} numberOfLines={1}>
+              {p.name}
+            </Text>
+            <Btn label="Forget" onPress={() => removePlace(p)} disabled={!!working} style={styles.placeBtn} />
+          </View>
+        ))}
+
         <Text style={[styles.section, { marginTop: 28 }]}>How often to record a point</Text>
         {recording ? <Text style={styles.intro}>A change here applies from your next trip.</Text> : null}
-        {INTERVAL_CHOICES.map((c) => {
-          const on = c.seconds === interval;
-          return (
-            <Pressable
-              key={c.seconds}
-              onPress={async () => {
-                setIntervalState(c.seconds);
-                await setIntervalS(c.seconds);
-              }}
-              style={[styles.choice, on && styles.choiceOn]}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: on }}
-            >
-              <View style={[styles.radio, on && styles.radioOn]}>{on ? <View style={styles.radioDot} /> : null}</View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.choiceLabel}>{c.label}</Text>
-                <Text style={styles.choiceHint}>{c.hint}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
+        {INTERVAL_CHOICES.map((c) => (
+          <Choice
+            key={c.seconds}
+            on={c.seconds === interval}
+            label={c.label}
+            hint={c.hint}
+            onPress={async () => {
+              setIntervalState(c.seconds);
+              await setIntervalS(c.seconds);
+            }}
+          />
+        ))}
 
         <Text style={[styles.section, { marginTop: 28 }]}>Good to know</Text>
         <Text style={styles.intro}>
@@ -225,4 +337,19 @@ const styles = StyleSheet.create({
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.accent },
   choiceLabel: { color: C.text, fontSize: 15, fontWeight: '600' },
   choiceHint: { color: C.muted, fontSize: 13, marginTop: 2 },
+  working: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  workingText: { color: C.accent, fontSize: 14, fontWeight: '600' },
+  placeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: S.radius,
+    borderWidth: 1,
+    borderColor: C.line,
+    backgroundColor: C.card,
+  },
+  placeName: { flex: 1, color: C.text, fontSize: 15, fontWeight: '600', marginRight: 10 },
+  placeBtn: { minHeight: 36, paddingHorizontal: 12 },
 });

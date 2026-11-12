@@ -8,6 +8,8 @@ import { Btn } from './Btn';
 interface Props {
   /** The trip being recorded right now, or null when idle. */
   active: TripRow | null;
+  /** Trips cut from the recording so far. */
+  tripsSoFar: number;
   busy: boolean;
   onStart: () => void;
   onStop: () => void;
@@ -26,7 +28,7 @@ function Cell({ label, value }: { label: string; value: string }) {
 }
 
 /** The big card at the top: start a trip, or watch the one being recorded. */
-export function RecordCard({ active, busy, onStart, onStop, onViewLive }: Props) {
+export function RecordCard({ active, tripsSoFar, busy, onStart, onStop, onViewLive }: Props) {
   // A once-a-second tick so the clock and "GPS signal" line stay fresh.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -40,7 +42,8 @@ export function RecordCard({ active, busy, onStart, onStop, onViewLive }: Props)
       <View style={styles.card}>
         <Text style={styles.title}>Ready to record</Text>
         <Text style={styles.body}>
-          Works with no internet. Keep the phone with you; you can switch the screen off.
+          Record your whole day. Each place where you stop becomes the end of one trip and the start of the next.
+          Works with no internet; you can switch the screen off.
         </Text>
         <Btn label="Start recording" kind="go" big busy={busy} onPress={onStart} style={styles.mainBtn} />
       </View>
@@ -74,11 +77,11 @@ export function RecordCard({ active, busy, onStart, onStop, onViewLive }: Props)
       <View style={styles.grid}>
         <Cell label="Distance" value={formatDistance(active.distance_m)} />
         <Cell label="Speed now" value={`${kmh < 10 ? kmh.toFixed(1) : Math.round(kmh)} km/h`} />
-        <Cell label="GPS points" value={active.point_count.toLocaleString()} />
+        <Cell label="Trips so far" value={String(tripsSoFar)} />
       </View>
       <Text style={[styles.signal, { color: signalColor }]}>{signal}</Text>
       <Btn label="Stop and save" kind="stop" big busy={busy} onPress={onStop} style={styles.mainBtn} />
-      <Btn label="See path so far" onPress={onViewLive} style={styles.secondBtn} disabled={active.point_count < 2} />
+      <Btn label="See today's trips so far" onPress={onViewLive} style={styles.secondBtn} disabled={active.point_count < 2} />
     </View>
   );
 }

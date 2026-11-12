@@ -214,7 +214,11 @@ describe('export files', () => {
   const meta = { id: 1, name: 'Test <trip> & more', startedAt: raw[0].t, endedAt: raw[raw.length - 1].t };
 
   it('builds a GPX file with every point, speed, direction and stops', () => {
-    const gpx = buildGpx(meta, raw, a.stops);
+    const gpx = buildGpx(
+      meta,
+      raw,
+      a.stops.map((s, i) => ({ lat: s.lat, lon: s.lon, t: s.start, name: `Stop ${i + 1}` }))
+    );
     expect(gpx.startsWith('<?xml')).toBe(true);
     expect(gpx.match(/<trkpt /g)).toHaveLength(raw.length);
     expect(gpx.match(/<wpt /g)).toHaveLength(3);

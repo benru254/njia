@@ -7,7 +7,6 @@
  */
 import type { FeatureCollection, LineString } from 'geojson';
 import type * as ML from 'maplibre-gl';
-import { formatDurationShort, formatTime } from '../../src/core/format';
 import { Analysis } from '../../src/core/types';
 import { BUCKETS, GAP_COLOR, bucketOf } from './speedColors';
 
@@ -30,11 +29,20 @@ type LngLat = [number, number];
 type FC = FeatureCollection<LineString>;
 const EMPTY: FC = { type: 'FeatureCollection', features: [] };
 
+/** A marker on the map (destination letter, pause, ...). */
+export interface Pin {
+  lngLat: LngLat;
+  html: string;
+  cls: string;
+  anchor?: 'center' | 'left' | 'bottom' | 'top';
+  offset?: [number, number];
+  title?: string;
+  onClick?: () => void;
+}
+
 export interface MapCallbacks {
   /** User tapped the path: jump to this time. */
   onPick: (t: number) => void;
-  /** User tapped a stop marker. */
-  onStop: (index: number) => void;
   /** Short note about the map background (e.g. offline). Empty string clears it. */
   onStatus: (message: string) => void;
 }
@@ -174,7 +182,7 @@ export class MapView {
     if (g) g.setData(this.gaps);
   }
 
-  setTrip(a: Analysis) {
+  setTrip(a: Analysis, pins: Pin[] = [], fit = true) {
     this.a = a;
     const pts = a.points;
     this.disp = pts.map((p) =>
@@ -245,47 +253,32 @@ export class MapView {
     this.cursor = null;
     if (!pts.length) return;
 
-    a.stops.forEach((s, i) => {
-      const el = pill('mk-stop', `<b>${i + 1}</b><span>${formatDurationShort(s.durationS)}</span>`);
-      el.title = `Stop ${i + 1}: ${formatTime(s.start)} to ${formatTime(s.end)}`;
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.cb.onStop(i);
-      });
-      // Anchor so the numbered circle (not the middle of the label) sits on the exact spot.
+    for (const p of pins) {
+      const el = pill(p.cls, p.html);
+      if (p.title) el.title = p.title;
+      if (p.onClick) {
+        const go = p.onClick;
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          go();
+        });
+      }
       this.markers.push(
-        new maplibregl.Marker({ element: el, anchor: 'left', offset: [-13, 0] }).setLngLat([s.lon, s.lat]).addTo(this.map)
+        new maplibregl.Marker({ element: el, anchor: p.anchor ?? 'center', offset: p.offset ?? [0, 0] })
+          .setLngLat(p.lngLat)
+          .addTo(this.map)
       );
-    });
-
-    const first = this.disp[0];
-    const last = this.disp[this.disp.length - 1];
-    this.markers.push(
-      new maplibregl.Marker({
-        element: pill('mk-start', `Start ${formatTime(a.stats.startTime)}`),
-        anchor: 'bottom',
-        offset: [0, -16],
-      })
-        .setLngLat(first)
-        .addTo(this.map),
-      new maplibregl.Marker({
-        element: pill('mk-end', `End ${formatTime(a.stats.endTime)}`),
-        anchor: 'top',
-        offset: [0, 16],
-      })
-        .setLngLat(last)
-        .addTo(this.map)
-    );
+    }
 
     const cur = document.createElement('div');
     cur.className = 'mk-cursor';
     cur.innerHTML = '<i></i>';
     this.cursorArrow = cur.firstElementChild as HTMLElement;
     this.cursor = new maplibregl.Marker({ element: cur, rotationAlignment: 'map' })
-      .setLngLat(first)
+      .setLngLat(this.disp[0])
       .addTo(this.map);
 
-    this.fit(false);
+    if (fit) this.fit(false);
   }
 
   /** Zoom so the whole trip is visible. */
@@ -298,7 +291,7 @@ export class MapView {
         [b.minLon, b.minLat],
         [b.maxLon, b.maxLat],
       ],
-      { padding: { top: 76, bottom: 44, left: 44, right: 70 }, maxZoom: 17, duration: animate ? 500 : 0 }
+      { padding: { top: 70, bottom: 40, left: 40, right: 110 }, maxZoom: 17, duration: animate ? 500 : 0 }
     );
   }
 

@@ -23,6 +23,8 @@ Install packages with `npx expo install <package>` so versions match the SDK.
 - **Never commit recorded trips** (`.gpx`, `njia_*.json`). They show where a real person has been.
 - **Do not create or edit `android/` or `ios/` by hand.** They are generated. Native settings go in `app.config.js`.
 - **No Expo Router.** Navigation is a single state value in `App.tsx` on purpose (three screens).
+- **Words:** the `trips` table holds RECORDINGS (Start to Stop, may be a whole day). The `legs` table holds the separate TRIPS (A → B) cut from them. `legs` is a cache: it is rebuilt from points + places + edits + settings, never edited by hand.
+- **Trip cutting lives in `src/core/segment.ts`** and is used by BOTH the app and the viewer. Change the rules there only, add a test in `tests/segment.test.ts`, and bump `LEGS_VERSION` in `src/data/legs.ts` so old recordings are re-cut once.
 
 ## How to work
 

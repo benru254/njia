@@ -1,11 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { Btn } from '../components/Btn';
 import { formatDate, formatTime } from '../core/format';
-import { TripFile } from '../core/types';
+import { Edit, ModeOverride, TripFile } from '../core/types';
+import { saveEdits, saveModes } from '../data/edits';
 import { loadTripFile, shareBackup, shareGpx } from '../data/exportTrip';
+import { rebuildAllLegs, rebuildLegs } from '../data/legs';
+import { savePlace } from '../data/places';
+import { setDestMinS } from '../data/settings';
 import { TripRow, deleteTrip, getActiveTripId, getTrip } from '../data/trips';
 import { DATA_MARKER, VIEWER_HTML } from '../generated/viewerHtml';
 import { C, S } from '../theme';
@@ -14,11 +18,14 @@ import { C, S } from '../theme';
 const VIEWER_BASE = 'https://njia.local/';
 
 interface Props {
+  /** The recording to show. */
   tripId: number;
+  /** Departure time of the trip to show first, or null for all trips. */
+  focusT: number | null;
   onBack: () => void;
 }
 
-/** Put the trip's data inside the viewer page (safely, so no character can break the page). */
+/** Put the recording inside the viewer page (safely, so no character can break the page). */
 function buildHtml(file: TripFile): string {
   const json = JSON.stringify(file)
     .replace(/</g, '\\u003c')
@@ -29,7 +36,7 @@ function buildHtml(file: TripFile): string {
   return VIEWER_HTML.replace(DATA_MARKER, () => `window.__NJIA_DATA__=${json};`);
 }
 
-export function TripScreen({ tripId, onBack }: Props) {
+export function TripScreen({ tripId, focusT, onBack }: Props) {
   const insets = useSafeAreaInsets();
   const [trip, setTrip] = useState<TripRow | null>(null);
   const [file, setFile] = useState<TripFile | null>(null);
@@ -37,22 +44,26 @@ export function TripScreen({ tripId, onBack }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
   const [sharing, setSharing] = useState<'gpx' | 'backup' | null>(null);
   const [version, setVersion] = useState(0);
+  /** The trip the viewer is showing, so a reload comes back to it. */
+  const focusRef = useRef<number | null>(focusT);
+  /** Saves run one after another, in the order you made the changes. */
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   const load = useCallback(async () => {
     try {
       const t = await getTrip(tripId);
       if (!t) {
-        setProblem('This trip no longer exists.');
+        setProblem('This recording no longer exists.');
         return;
       }
-      const loaded = await loadTripFile(t);
+      const loaded = await loadTripFile(t, { focusT: focusRef.current });
       setTrip(t);
       setFile(loaded.file);
       setLive((await getActiveTripId()) === tripId);
       setVersion((v) => v + 1);
-      setProblem(loaded.points.length ? null : 'No GPS points have been recorded for this trip yet.');
+      setProblem(loaded.points.length ? null : 'No GPS points have been recorded yet.');
     } catch (err) {
-      setProblem('Could not open this trip: ' + String((err as Error)?.message || err));
+      setProblem('Could not open this recording: ' + String((err as Error)?.message || err));
     }
   }, [tripId]);
 
@@ -62,10 +73,67 @@ export function TripScreen({ tripId, onBack }: Props) {
 
   const html = useMemo(() => (file ? buildHtml(file) : null), [file]);
 
+  /** Save a change made in the viewer. The viewer already shows it; we keep it and update the trip list. */
+  const persist = (job: () => Promise<void>) => {
+    saveQueue.current = saveQueue.current.then(job).catch((err) => {
+      Alert.alert('Your change was not saved', String((err as Error)?.message || err) + '\n\nThe recording will reload.');
+      load();
+    });
+  };
+
+  const onMessage = (e: WebViewMessageEvent) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(e.nativeEvent.data);
+    } catch {
+      return;
+    }
+    switch (msg?.type) {
+      case 'focus':
+        focusRef.current = typeof msg.t === 'number' ? msg.t : null;
+        break;
+      case 'open':
+        if (typeof msg.url === 'string' && msg.url.startsWith('https://www.google.com/maps/')) {
+          Linking.openURL(msg.url).catch(() =>
+            Alert.alert('Could not open Google Maps', 'Is Google Maps (or a web browser) installed?')
+          );
+        }
+        break;
+      case 'edits':
+        persist(async () => {
+          await saveEdits(tripId, (msg.edits ?? []) as Edit[]);
+          await rebuildLegs(tripId);
+        });
+        break;
+      case 'modes':
+        persist(async () => {
+          await saveModes(tripId, (msg.modes ?? []) as ModeOverride[]);
+          await rebuildLegs(tripId);
+        });
+        break;
+      case 'place':
+        persist(async () => {
+          await savePlace(String(msg.name ?? ''), Number(msg.lat), Number(msg.lon));
+          await rebuildAllLegs(); // a named place can change trips on other days too
+        });
+        break;
+      case 'settings':
+        persist(async () => {
+          await setDestMinS(Number(msg.destMinS));
+          await rebuildAllLegs();
+        });
+        break;
+      case 'error':
+        setProblem('The map viewer hit a problem: ' + msg.message);
+        break;
+    }
+  };
+
   const share = async (kind: 'gpx' | 'backup') => {
     if (!trip) return;
     setSharing(kind);
     try {
+      await saveQueue.current;
       if (kind === 'gpx') await shareGpx(trip);
       else await shareBackup(trip);
     } catch (err) {
@@ -75,28 +143,40 @@ export function TripScreen({ tripId, onBack }: Props) {
   };
 
   const remove = () => {
-    Alert.alert('Delete this trip?', 'It will be removed from this phone for good. This cannot be undone.', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteTrip(tripId);
-          onBack();
+    Alert.alert(
+      'Delete this whole recording?',
+      'All trips in it are removed from this phone for good. This cannot be undone.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await saveQueue.current;
+            await deleteTrip(tripId);
+            onBack();
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
-  const title = trip ? trip.name || formatDate(trip.started_at) : 'Trip';
+  const back = async () => {
+    await saveQueue.current.catch(() => undefined); // let the trip list catch up first
+    onBack();
+  };
+
+  const title = trip ? trip.name || formatDate(trip.started_at) : 'Recording';
   const sub = trip
-    ? `${formatTime(trip.started_at)} – ${live ? 'still recording' : formatTime(trip.ended_at ?? trip.last_time ?? trip.started_at)}`
+    ? `Recorded ${formatTime(trip.started_at)} – ${
+        live ? 'now' : formatTime(trip.ended_at ?? trip.last_time ?? trip.started_at)
+      }`
     : '';
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.head}>
-        <Pressable onPress={onBack} style={styles.back} accessibilityRole="button" accessibilityLabel="Back to trips">
+        <Pressable onPress={back} style={styles.back} accessibilityRole="button" accessibilityLabel="Back to trips">
           <Text style={styles.backText}>‹ Trips</Text>
         </Pressable>
         <View style={styles.titles}>
@@ -143,20 +223,13 @@ export function TripScreen({ tripId, onBack }: Props) {
           overScrollMode="never"
           setBuiltInZoomControls={false}
           textZoom={100}
-          onMessage={(e) => {
-            try {
-              const msg = JSON.parse(e.nativeEvent.data);
-              if (msg.type === 'error') setProblem('The map viewer hit a problem: ' + msg.message);
-            } catch {
-              /* not one of ours */
-            }
-          }}
-          onRenderProcessGone={() => setProblem('The map viewer ran out of memory. Go back and open the trip again.')}
+          onMessage={onMessage}
+          onRenderProcessGone={() => setProblem('The map viewer ran out of memory. Go back and open the recording again.')}
         />
       ) : (
         <View style={styles.center}>
           <ActivityIndicator color={C.accent} size="large" />
-          <Text style={styles.loading}>Opening trip…</Text>
+          <Text style={styles.loading}>Opening…</Text>
         </View>
       )}
     </View>

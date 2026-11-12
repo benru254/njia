@@ -116,9 +116,13 @@ export async function getPoints(tripId: number): Promise<RawPoint[]> {
   );
 }
 
+/** Delete a whole recording, with its trips and corrections. */
 export async function deleteTrip(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM points WHERE trip_id = ?', [id]);
+  await db.runAsync('DELETE FROM legs WHERE trip_id = ?', [id]);
+  await db.runAsync('DELETE FROM edits WHERE trip_id = ?', [id]);
+  await db.runAsync('DELETE FROM modes WHERE trip_id = ?', [id]);
   await db.runAsync('DELETE FROM trips WHERE id = ?', [id]);
 }
 

@@ -7,7 +7,7 @@ import { SetupScreen } from './src/screens/SetupScreen';
 import { TripScreen } from './src/screens/TripScreen';
 import { C } from './src/theme';
 
-type Route = { name: 'home' } | { name: 'trip'; id: number } | { name: 'setup' };
+type Route = { name: 'home' } | { name: 'trip'; id: number; focusT: number | null } | { name: 'setup' };
 
 /**
  * The app has only three screens, so navigation is kept deliberately simple:
@@ -32,9 +32,12 @@ export default function App() {
       <View style={{ flex: 1, backgroundColor: C.bg }}>
         <StatusBar style="light" />
         {route.name === 'home' ? (
-          <HomeScreen onOpenTrip={(id) => setRoute({ name: 'trip', id })} onOpenSetup={() => setRoute({ name: 'setup' })} />
+          <HomeScreen
+            onOpenTrip={(id, focusT) => setRoute({ name: 'trip', id, focusT })}
+            onOpenSetup={() => setRoute({ name: 'setup' })}
+          />
         ) : route.name === 'trip' ? (
-          <TripScreen tripId={route.id} onBack={goHome} />
+          <TripScreen tripId={route.id} focusT={route.focusT} onBack={goHome} />
         ) : (
           <SetupScreen onBack={goHome} />
         )}

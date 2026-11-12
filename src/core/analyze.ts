@@ -131,6 +131,22 @@ function median3(a: number, b: number, c: number): number {
   return Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
 }
 
+/**
+ * Top speed between two point indexes (inclusive). Uses the middle value of
+ * each 3 readings, so one freak reading cannot become the top speed.
+ */
+export function topSpeed(points: TrackPoint[], from = 0, to = points.length - 1): number {
+  let best = 0;
+  if (to - from < 2) {
+    for (let i = from; i <= to; i++) best = Math.max(best, points[i].v);
+    return best;
+  }
+  for (let i = from + 1; i < to; i++) {
+    best = Math.max(best, median3(points[i - 1].v, points[i].v, points[i + 1].v));
+  }
+  return best;
+}
+
 export function emptyStats(rawCount = 0): TripStats {
   return {
     startTime: 0,
@@ -253,15 +269,7 @@ export function analyze(raw: RawPoint[], options: Partial<AnalyzeOptions> = {}):
     });
   }
 
-  // Top speed: use the middle of each 3 readings so one freak value cannot win.
-  let maxSpeed = 0;
-  if (n < 3) {
-    for (const p of points) maxSpeed = Math.max(maxSpeed, p.v);
-  } else {
-    for (let i = 1; i < n - 1; i++) {
-      maxSpeed = Math.max(maxSpeed, median3(points[i - 1].v, points[i].v, points[i + 1].v));
-    }
-  }
+  const maxSpeed = topSpeed(points);
 
   const stoppedS = stops.reduce((sum, s) => sum + s.durationS, 0);
   const startTime = points[0].t;

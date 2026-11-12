@@ -86,13 +86,18 @@
     border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,0.45);
     display: flex; align-items: center; gap: 5px; cursor: pointer;
   }
-  .mk-stop { background: #10151c; color: #e8edf3; padding: 2px 8px 2px 2px; border: 1.5px solid #ffffff; }
-  .mk-stop b {
-    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--accent); color: #10151c; font-size: 11px;
+  .mk-ep { background: #10151c; color: #e8edf3; padding: 2px 9px 2px 2px; border: 1.5px solid #ffffff; z-index: 2; }
+  .mk-ep b {
+    width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent); color: #10151c; font-size: 12px;
   }
-  .mk-start { background: var(--go); color: #ffffff; padding: 3px 9px; border: 1.5px solid #ffffff; }
-  .mk-end { background: var(--end); color: #ffffff; padding: 3px 9px; border: 1.5px solid #ffffff; }
+  .mk-ep.ep-a b { background: var(--go); color: #ffffff; }
+  .mk-ep.ep-z b { background: var(--end); color: #ffffff; }
+  .mk-pz {
+    background: rgba(16,21,28,0.88); color: #e8edf3; padding: 0 6px; font-weight: 600; font-size: 10px;
+    border: 1px solid #8b98a8; z-index: 1;
+  }
+  .mk-pz.mk-traffic { background: #5c1f1c; border-color: #ff8a80; color: #ffffff; }
   .mk-cursor {
     width: 20px; height: 20px; border-radius: 50%;
     background: var(--accent); border: 3px solid #ffffff;
@@ -108,6 +113,14 @@
 
   /* ---- Panel ---- */
   #panel { background: var(--bg); color: var(--text); border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  #tripbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px 6px; border-bottom: 1px solid var(--line); background: var(--bg); }
+  #tripbar button { height: 38px; min-width: 38px; padding: 0 10px; background-color: var(--bg2); color: var(--text); font-size: 18px; line-height: 1; }
+  #tripbar button:disabled { opacity: 0.35; }
+  #tripbar #leg-all { font-size: 13px; font-weight: 600; }
+  #tripbar #leg-all.on { background-color: var(--accent); color: #10151c; border-color: var(--accent); }
+  #leg-title { flex: 1; min-width: 0; text-align: center; }
+  #leg-main { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #leg-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #now { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; padding: 10px 14px 4px; align-items: end; }
   #now-speed { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
   #now-speed small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 3px; }
@@ -115,6 +128,7 @@
   #now-state { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #now-state.stopped { color: var(--accent); }
   #now-state.nodata { color: var(--muted); }
+  #now-state.traffic { color: #ff8a80; }
   #now-extra { grid-column: 1 / -1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #now-right { text-align: right; }
   #now-time { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
@@ -151,12 +165,34 @@
   .opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0 2px; color: var(--text); }
   .opt select { padding: 6px 8px; background-color: var(--bg2); color: var(--text); }
 
-  .ev { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background-color: var(--bg); color: var(--text); }
+  .ev { padding: 8px 4px; border-bottom: 1px solid var(--line); background-color: var(--bg); color: var(--text); cursor: pointer; }
   .ev:active, .ev.on { background-color: var(--bg2); }
+  .ev-main { display: flex; align-items: center; gap: 10px; }
   .ev .badge { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; background: var(--accent); color: #10151c; }
   .ev .badge.s { background: var(--go); color: #ffffff; }
   .ev .badge.e { background: var(--end); color: #ffffff; }
   .ev .badge.g { background: var(--line); color: var(--muted); }
+  .badge { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; background: var(--accent); color: #10151c; }
+  .badge.ep-a { background: var(--go); color: #ffffff; }
+  .badge.ep-z { background: var(--end); color: #ffffff; }
+  .badge.ep-d { background: var(--accent); color: #10151c; }
+  .badge.p { background: #3a4552; color: #e8edf3; }
+  .badge.tr { background: #5c1f1c; color: #ffffff; }
+  .acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 0 2px 36px; }
+  .acts button.mini { padding: 6px 10px; font-size: 12px; font-weight: 600; background-color: var(--bg2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; }
+  .acts.big { padding: 12px 0 2px; }
+  .acts.big button { flex: 1 1 100%; padding: 11px 12px; font-weight: 700; background-color: var(--bg2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; }
+  .acts.big button[data-act="split-here"] { background-color: var(--accent); color: #10151c; border-color: var(--accent); }
+  .nameform { display: flex; gap: 6px; padding: 6px 0 4px 36px; }
+  .nameform input { flex: 1; min-width: 0; padding: 8px 10px; background-color: #0d1218; color: var(--text); border: 1px solid var(--accent); border-radius: 8px; }
+  .nameform input::placeholder { color: var(--muted); }
+  .nameform button.save { background-color: var(--accent); color: #10151c; border-color: var(--accent); }
+  .route { padding: 10px 0 4px; }
+  .route .ep { display: flex; align-items: center; gap: 10px; color: var(--text); }
+  .route .ep .what div:first-child { font-weight: 700; font-size: 15px; color: var(--text); }
+  .route .ep .what div:last-child { font-size: 12px; color: var(--muted); }
+  .route .acts { padding-bottom: 6px; }
+  .route-line { margin: 2px 0 6px 12px; padding: 6px 0 6px 22px; border-left: 2px dashed var(--line); color: var(--muted); font-size: 13px; }
   .ev .what { flex: 1; min-width: 0; }
   .ev .what div:first-child { font-weight: 600; color: var(--text); }
   .ev .what div:last-child { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -170,7 +206,7 @@
   #empty p { color: var(--muted); margin: 0 0 18px; }
   #empty button { padding: 10px 16px; margin: 4px; }
   #empty button.primary { background-color: var(--accent); color: #10151c; border-color: var(--accent); font-weight: 700; }
-  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9; background: #c2362f; color: #ffffff; padding: 10px 14px; border-radius: 10px; max-width: 90vw; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9; background: #26303c; color: #ffffff; border: 1px solid var(--accent); padding: 10px 14px; border-radius: 10px; max-width: 90vw; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
 
   /* ---- Wide screens: panel on the left, details always open ---- */
   @media (min-width: 900px) {
@@ -206,6 +242,12 @@
     </div>
 
     <section id="panel">
+      <div id="tripbar">
+        <button id="leg-prev" type="button" aria-label="Previous trip">‹</button>
+        <div id="leg-title"><div id="leg-main">–</div><div id="leg-sub"></div></div>
+        <button id="leg-next" type="button" aria-label="Next trip">›</button>
+        <button id="leg-all" type="button">All</button>
+      </div>
       <div id="now">
         <div id="now-speed">0<small>km/h</small></div>
         <div id="now-mid">
@@ -228,6 +270,7 @@
         <button id="btn-play" type="button" title="Play" aria-label="Play or pause"><svg viewBox="0 0 16 16" id="ico-play"><path d="M4 2l10 6-10 6z"/></svg></button>
         <button id="btn-next" type="button" title="Next stop" aria-label="Next stop"><svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button>
         <select id="rate" aria-label="Replay speed">
+          <option value="2">2×</option>
           <option value="5">5×</option>
           <option value="20">20×</option>
           <option value="60">60×</option>
@@ -239,8 +282,9 @@
       </div>
       <div id="details" hidden>
         <div id="tabs">
-          <button type="button" data-tab="summary" class="on">Summary</button>
+          <button type="button" data-tab="trip" class="on">Trip</button>
           <button type="button" data-tab="stops">Stops</button>
+          <button type="button" data-tab="trips">Trips</button>
         </div>
         <div id="tabbody"></div>
       </div>

@@ -103,3 +103,29 @@ export function sampleTrip(): RawPoint[] {
     { kind: 'stay', seconds: 180 }, // 3 min at the end
   ]);
 }
+
+/**
+ * A delivery run with every situation the trip splitter must handle:
+ *   A shop (10 min) -> ride -> B customer: park, walk to the door, 2.5 min inside, walk back (about 4 min)
+ *   -> ride -> 2.5 min standstill at a junction -> 4 min crawling in a jam -> ride
+ *   -> C petrol station (7 min) -> ride back -> D shop (5 min, end).
+ * Expected: 4 destinations (A, B, C, D) = 3 trips; the junction is a pause and the crawl is traffic.
+ */
+export function deliveryDay(): RawPoint[] {
+  return simulate([
+    { kind: 'stay', seconds: 600 },
+    { kind: 'move', seconds: 600, kmh: 35, dir: 45 },
+    { kind: 'stay', seconds: 20 },
+    { kind: 'move', seconds: 30, kmh: 4, dir: 135 },
+    { kind: 'stay', seconds: 150 },
+    { kind: 'move', seconds: 30, kmh: 4, dir: 315 },
+    { kind: 'stay', seconds: 20 },
+    { kind: 'move', seconds: 300, kmh: 30, dir: 90 },
+    { kind: 'stay', seconds: 150 },
+    { kind: 'move', seconds: 240, kmh: 1.2, dir: 90 },
+    { kind: 'move', seconds: 300, kmh: 40, dir: 90 },
+    { kind: 'stay', seconds: 420 },
+    { kind: 'move', seconds: 900, kmh: 35, dir: 250 },
+    { kind: 'stay', seconds: 300 },
+  ]);
+}

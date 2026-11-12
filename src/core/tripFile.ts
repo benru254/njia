@@ -4,8 +4,7 @@
  *     most map tools can open.
  *   - Njia JSON: a compact full backup that the Njia viewer opens directly.
  */
-import { formatDuration, formatTime } from './format';
-import { RawPoint, Stop, TripFile } from './types';
+import { RawPoint, TripExtras, TripFile } from './types';
 
 export interface TripMeta {
   id: number | string;
@@ -24,8 +23,17 @@ function xml(s: string): string {
 
 const num = (n: number, digits: number) => n.toFixed(digits);
 
+/** A named point in a GPX file (a destination, shown as a pin in map apps). */
+export interface GpxWaypoint {
+  lat: number;
+  lon: number;
+  t: number;
+  name: string;
+  desc?: string;
+}
+
 /** Build a GPX 1.1 file. Speed and direction go in the widely-read Garmin extension. */
-export function buildGpx(trip: TripMeta, points: RawPoint[], stops: Stop[] = []): string {
+export function buildGpx(trip: TripMeta, points: RawPoint[], waypoints: GpxWaypoint[] = []): string {
   const name = xml(trip.name || `Njia trip ${new Date(trip.startedAt).toISOString().slice(0, 16).replace('T', ' ')}`);
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -36,13 +44,14 @@ export function buildGpx(trip: TripMeta, points: RawPoint[], stops: Stop[] = [])
   );
   out.push(`<metadata><name>${name}</name><time>${new Date(trip.startedAt).toISOString()}</time></metadata>`);
 
-  stops.forEach((s, i) => {
+  for (const w of waypoints) {
     out.push(
-      `<wpt lat="${num(s.lat, 6)}" lon="${num(s.lon, 6)}"><time>${new Date(s.start).toISOString()}</time>` +
-        `<name>Stop ${i + 1} (${xml(formatDuration(s.durationS))})</name>` +
-        `<desc>${xml(`${formatTime(s.start)} to ${formatTime(s.end)}`)}</desc></wpt>`
+      `<wpt lat="${num(w.lat, 6)}" lon="${num(w.lon, 6)}"><time>${new Date(w.t).toISOString()}</time>` +
+        `<name>${xml(w.name)}</name>` +
+        (w.desc ? `<desc>${xml(w.desc)}</desc>` : '') +
+        '</wpt>'
     );
-  });
+  }
 
   out.push(`<trk><name>${name}</name><trkseg>`);
   for (const p of points) {
@@ -67,9 +76,10 @@ export function buildGpx(trip: TripMeta, points: RawPoint[], stops: Stop[] = [])
 const r = (n: number | null, digits: number): number | null =>
   n == null || !Number.isFinite(n) ? null : Number(n.toFixed(digits));
 
-/** Build the compact Njia backup object. */
-export function buildTripFile(trip: TripMeta, points: RawPoint[]): TripFile {
+/** Build the compact Njia backup object (with places, corrections and settings if given). */
+export function buildTripFile(trip: TripMeta, points: RawPoint[], extras: TripExtras = {}): TripFile {
   return {
+    ...extras,
     format: 'njia-trip',
     version: 1,
     trip: { id: trip.id, name: trip.name, startedAt: trip.startedAt, endedAt: trip.endedAt },
@@ -86,7 +96,7 @@ export function buildTripFile(trip: TripMeta, points: RawPoint[]): TripFile {
 }
 
 /** Read a Njia backup object back into readings. Throws a plain-language error if it is not one. */
-export function readTripFile(data: unknown): { trip: TripMeta; points: RawPoint[] } {
+export function readTripFile(data: unknown): { trip: TripMeta; points: RawPoint[]; extras: TripExtras } {
   const f = data as TripFile;
   if (!f || f.format !== 'njia-trip' || !Array.isArray(f.points)) {
     throw new Error('This is not a Njia trip file.');
@@ -100,7 +110,15 @@ export function readTripFile(data: unknown): { trip: TripMeta; points: RawPoint[
     spd: row[5] ?? null,
     hdg: row[6] ?? null,
   }));
+  const list = <T>(x: T[] | undefined): T[] => (Array.isArray(x) ? x : []);
   return {
+    extras: {
+      places: list(f.places),
+      edits: list(f.edits),
+      modes: list(f.modes),
+      settings: f.settings && typeof f.settings === 'object' ? f.settings : {},
+      view: f.view && typeof f.view === 'object' ? f.view : {},
+    },
     trip: {
       id: f.trip?.id ?? 0,
       name: f.trip?.name ?? null,

@@ -113,8 +113,60 @@ export const DEFAULT_OPTIONS: AnalyzeOptions = {
   gapS: 60,
 };
 
-/** The file format used for backup and for sending a trip to the viewer. */
-export interface TripFile {
+// ---------------------------------------------------------------- trips inside a recording
+
+export type TravelMode = 'walk' | 'motorbike' | 'car' | 'matatu' | 'other';
+export const TRAVEL_MODES: TravelMode[] = ['walk', 'motorbike', 'car', 'matatu', 'other'];
+export const MODE_LABEL: Record<TravelMode, string> = {
+  walk: 'Walking',
+  motorbike: 'Motorbike',
+  car: 'Car',
+  matatu: 'Matatu / bus',
+  other: 'Other',
+};
+
+/** A place you named (shop, customer, home). Stops here are recognised by name. */
+export interface Place {
+  id: number | string;
+  name: string;
+  lat: number;
+  lon: number;
+  radiusM: number;
+}
+
+/** A one-tap correction: "split" makes a stop (or a moment) a destination, "join" makes it a pause. */
+export interface Edit {
+  t: number;
+  kind: 'split' | 'join';
+}
+
+/** "This trip was by motorbike" etc. Matched to a trip by its departure time. */
+export interface ModeOverride {
+  t: number;
+  mode: TravelMode;
+}
+
+export interface TripSettings {
+  /** A stop this long (seconds) becomes a destination. */
+  destMinS: number;
+  /** What vehicle trips are labelled as unless changed. */
+  vehicle: TravelMode;
+}
+
+export const DEFAULT_SETTINGS: TripSettings = { destMinS: 300, vehicle: 'motorbike' };
+
+/** Extra information that travels with a recording (all optional, so older files still open). */
+export interface TripExtras {
+  places?: Place[];
+  edits?: Edit[];
+  modes?: ModeOverride[];
+  settings?: Partial<TripSettings>;
+  /** Which trip and moment to show first (used by the phone app). */
+  view?: { focusT?: number | null; cursorT?: number | null };
+}
+
+/** The file format used for backup and for sending a recording to the viewer. */
+export interface TripFile extends TripExtras {
   format: 'njia-trip';
   version: 1;
   trip: {

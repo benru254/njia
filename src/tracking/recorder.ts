@@ -1,6 +1,7 @@
 /** Starting and stopping a recording. */
 import * as Location from 'expo-location';
 import { getMeta, setMeta } from '../data/db';
+import { rebuildLegs } from '../data/legs';
 import { clearActiveTrip, createTrip, deleteTrip, finishTrip, getActiveTripId } from '../data/trips';
 import { LOCATION_TASK } from './task';
 
@@ -82,7 +83,13 @@ export async function stopRecording(): Promise<number | null> {
   await clearActiveTrip();
   if (tripId == null) return null;
   const done = await finishTrip(tripId);
-  return done ? tripId : null;
+  if (!done) return null;
+  try {
+    await rebuildLegs(tripId); // cut the recording into separate trips
+  } catch (err) {
+    console.warn('[njia] could not work out trips:', err);
+  }
+  return tripId;
 }
 
 export type StartupState = 'idle' | 'recording' | 'resumed' | 'interrupted';
