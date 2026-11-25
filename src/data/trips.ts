@@ -6,6 +6,8 @@ import { getDb, getMeta, setMeta } from './db';
 
 export interface TripRow {
   id: number;
+  /** Set for Always-on recordings: the day they cover ("2026-11-25"). */
+  auto_day?: string | null;
   started_at: number;
   ended_at: number | null;
   name: string | null;
@@ -44,18 +46,43 @@ export async function clearActiveTrip(): Promise<void> {
   await setMeta(ACTIVE_KEY, null);
 }
 
+export async function setActiveTrip(id: number): Promise<void> {
+  await setMeta(ACTIVE_KEY, String(id));
+}
+
+/** Always on: the recording for one day ("2026-11-25"), created when its first point arrives. */
+export async function dayTrip(day: string, firstT: number): Promise<TripRow> {
+  const db = await getDb();
+  const found = await db.getFirstAsync<TripRow>('SELECT * FROM trips WHERE auto_day = ? ORDER BY id LIMIT 1', [day]);
+  if (found) return found;
+  const res = await db.runAsync('INSERT INTO trips (started_at, auto_day) VALUES (?, ?)', [firstT, day]);
+  return (await getTrip(res.lastInsertRowId))!;
+}
+
+/** Always-on day recordings that are still open but whose day is over. */
+export async function openPastDays(today: string): Promise<TripRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<TripRow>(
+    'SELECT * FROM trips WHERE auto_day IS NOT NULL AND auto_day < ? AND ended_at IS NULL ORDER BY auto_day',
+    [today]
+  );
+}
+
 // Writes are done one batch at a time, in order, so the running distance stays correct
 // even if the phone delivers two batches of GPS points almost together.
 let writeQueue: Promise<unknown> = Promise.resolve();
 
+/** A point to save. `src`: 0 GPS, 1 "still here" check with GPS off, 2 wake-up reading. */
+export type SavePoint = RawPoint & { src?: number | null };
+
 /** Save a batch of new GPS points and update the trip's live numbers. */
-export function insertPoints(tripId: number, pts: RawPoint[]): Promise<void> {
+export function insertPoints(tripId: number, pts: SavePoint[]): Promise<void> {
   const job = writeQueue.then(() => doInsert(tripId, pts));
   writeQueue = job.catch(() => undefined);
   return job;
 }
 
-async function doInsert(tripId: number, pts: RawPoint[]): Promise<void> {
+async function doInsert(tripId: number, pts: SavePoint[]): Promise<void> {
   const valid = pts.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon) && Number.isFinite(p.t));
   if (!valid.length) return;
   const db = await getDb();
@@ -65,10 +92,13 @@ async function doInsert(tripId: number, pts: RawPoint[]): Promise<void> {
   // Save in chunks (SQLite limits how many values one command may carry).
   for (let i = 0; i < valid.length; i += 100) {
     const chunk = valid.slice(i, i + 100);
-    const placeholders = chunk.map(() => '(?,?,?,?,?,?,?,?)').join(',');
+    const placeholders = chunk.map(() => '(?,?,?,?,?,?,?,?,?)').join(',');
     const values: (number | null)[] = [];
-    for (const p of chunk) values.push(tripId, p.t, p.lat, p.lon, p.acc, p.alt, p.spd, p.hdg);
-    await db.runAsync(`INSERT INTO points (trip_id, t, lat, lon, acc, alt, spd, hdg) VALUES ${placeholders}`, values);
+    for (const p of chunk) values.push(tripId, p.t, p.lat, p.lon, p.acc, p.alt, p.spd, p.hdg, p.src ?? 0);
+    await db.runAsync(
+      `INSERT OR IGNORE INTO points (trip_id, t, lat, lon, acc, alt, spd, hdg, src) VALUES ${placeholders}`,
+      values
+    );
   }
 
   // Live distance: only count a step once we have clearly moved away from the
@@ -141,8 +171,8 @@ export async function finishTrip(id: number): Promise<{ trip: TripRow; analysis:
   const analysis = analyze(points);
   const s = analysis.stats;
   await db.runAsync(
-    `UPDATE trips SET ended_at = ?, distance_m = ?, moving_s = ?, stopped_s = ?, stop_count = ?, max_speed = ? WHERE id = ?`,
-    [points[points.length - 1].t, s.distanceM, s.movingS, s.stoppedS, analysis.stops.length, s.maxSpeed, id]
+    `UPDATE trips SET ended_at = ?, distance_m = ?, moving_s = ?, stopped_s = ?, stop_count = ?, max_speed = ?, point_count = ? WHERE id = ?`,
+    [points[points.length - 1].t, s.distanceM, s.movingS, s.stoppedS, analysis.stops.length, s.maxSpeed, points.length, id]
   );
   const trip = await getTrip(id);
   return trip ? { trip, analysis } : null;

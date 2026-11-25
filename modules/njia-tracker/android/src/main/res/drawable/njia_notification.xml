@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small white route icon for the status bar. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="24"
+  android:viewportHeight="24">
+  <path
+    android:fillColor="#FFFFFFFF"
+    android:pathData="M6,3a3,3 0,1 0,0.001 0zM18,15a3,3 0,1 0,0.001 0zM6,7.5c0,4 2,5.5 6,6c3,0.4 4.5,1.2 5,3l-1.9,0.6c-0.3,-1 -1.1,-1.4 -3.4,-1.7C6.9,14.7 4,12.6 4,7.5z" />
+</vector>

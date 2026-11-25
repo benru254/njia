@@ -6,10 +6,12 @@ import { Btn } from '../components/Btn';
 import { formatDate, formatTime } from '../core/format';
 import { Edit, ModeOverride, TripFile } from '../core/types';
 import { saveEdits, saveModes } from '../data/edits';
-import { loadTripFile, shareBackup, shareGpx } from '../data/exportTrip';
+import { loadTripFile, shareBackup, shareGpx, shareKml } from '../data/exportTrip';
+import { importBuffer } from '../data/importer';
 import { rebuildAllLegs, rebuildLegs } from '../data/legs';
 import { savePlace } from '../data/places';
 import { setDestMinS } from '../data/settings';
+import { applySettings } from '../tracking/recorder';
 import { TripRow, deleteTrip, getActiveTripId, getTrip } from '../data/trips';
 import { DATA_MARKER, VIEWER_HTML } from '../generated/viewerHtml';
 import { C, S } from '../theme';
@@ -42,7 +44,7 @@ export function TripScreen({ tripId, focusT, onBack }: Props) {
   const [file, setFile] = useState<TripFile | null>(null);
   const [live, setLive] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [sharing, setSharing] = useState<'gpx' | 'backup' | null>(null);
+  const [sharing, setSharing] = useState<'gpx' | 'backup' | 'kml' | null>(null);
   const [version, setVersion] = useState(0);
   /** The trip the viewer is showing, so a reload comes back to it. */
   const focusRef = useRef<number | null>(focusT);
@@ -51,6 +53,7 @@ export function TripScreen({ tripId, focusT, onBack }: Props) {
 
   const load = useCallback(async () => {
     try {
+      await importBuffer(); // newest points first, so a live recording is up to date
       const t = await getTrip(tripId);
       if (!t) {
         setProblem('This recording no longer exists.');
@@ -115,6 +118,7 @@ export function TripScreen({ tripId, focusT, onBack }: Props) {
         persist(async () => {
           await savePlace(String(msg.name ?? ''), Number(msg.lat), Number(msg.lon));
           await rebuildAllLegs(); // a named place can change trips on other days too
+          await applySettings(); // the recorder saves battery sooner at named places
         });
         break;
       case 'settings':
@@ -129,17 +133,26 @@ export function TripScreen({ tripId, focusT, onBack }: Props) {
     }
   };
 
-  const share = async (kind: 'gpx' | 'backup') => {
+  const share = async (kind: 'gpx' | 'backup' | 'kml') => {
     if (!trip) return;
     setSharing(kind);
     try {
       await saveQueue.current;
       if (kind === 'gpx') await shareGpx(trip);
+      else if (kind === 'kml') await shareKml(trip);
       else await shareBackup(trip);
     } catch (err) {
       Alert.alert('Could not share', String((err as Error)?.message || err));
     }
     setSharing(null);
+  };
+
+  const more = () => {
+    Alert.alert('More', undefined, [
+      { text: 'Share GPX (other map apps)', onPress: () => share('gpx') },
+      { text: 'Delete this recording', style: 'destructive', onPress: remove },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const remove = () => {
@@ -190,12 +203,12 @@ export function TripScreen({ tripId, focusT, onBack }: Props) {
       </View>
 
       <View style={styles.actions}>
-        <Btn label="Share GPX" onPress={() => share('gpx')} busy={sharing === 'gpx'} style={styles.action} />
+        <Btn label="Google Earth" onPress={() => share('kml')} busy={sharing === 'kml'} style={styles.action} />
         <Btn label="Send to PC" onPress={() => share('backup')} busy={sharing === 'backup'} style={styles.action} />
         {live ? (
           <Btn label="Refresh" kind="primary" onPress={load} style={styles.action} />
         ) : (
-          <Btn label="Delete" onPress={remove} style={styles.action} />
+          <Btn label="More…" onPress={more} busy={sharing === 'gpx'} style={styles.action} />
         )}
       </View>
 

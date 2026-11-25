@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { NjiaTracker, TrackerStatus } from '../../modules/njia-tracker';
+import { AlwaysCard } from '../components/AlwaysCard';
 import { LegItem } from '../components/LegItem';
 import { RecordCard } from '../components/RecordCard';
 import { formatDate, formatDistance } from '../core/format';
+import { importBuffer } from '../data/importer';
 import { LegRow, ensureLegsUpToDate, listLegs, rebuildLegs } from '../data/legs';
+import { RecordMode, getRecordMode } from '../data/mode';
 import { TripRow, getActiveTripId, getTrip } from '../data/trips';
 import { C, S } from '../theme';
 import { SetupStatus, getSetupStatus, isReady, requestLocation, requestNotifications } from '../tracking/permissions';
-import { StartupState, checkOnStartup, startRecording, stopRecording } from '../tracking/recorder';
+import { StartupState, checkOnStartup, enableAlwaysOn, startRecording, stopRecording } from '../tracking/recorder';
 
 interface Props {
   /** Open a recording. focusT = departure time of the trip to show, or null for all trips. */
@@ -51,11 +55,17 @@ export function HomeScreen({ onOpenTrip, onOpenSetup }: Props) {
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [mode, setMode] = useState<RecordMode>('manual');
+  const [recorder, setRecorder] = useState<TrackerStatus | null>(null);
   const startupDone = useRef(false);
+  const startupFinished = useRef(false);
   const lastLive = useRef({ at: 0, points: -1 });
 
   const refresh = useCallback(async () => {
+    if (!startupFinished.current) return; // the first import runs in the startup step
     try {
+      // Bring in what the recorder saved since last time (it records even when the app is closed).
+      await importBuffer();
       const id = await getActiveTripId();
       const trip = id != null ? await getTrip(id) : null;
       // While recording, cut the trips so far every 20 seconds (it takes a moment on long days).
@@ -63,10 +73,12 @@ export function HomeScreen({ onOpenTrip, onOpenSetup }: Props) {
         lastLive.current = { at: Date.now(), points: trip.point_count };
         await rebuildLegs(trip.id);
       }
-      const [list, status] = await Promise.all([listLegs(), getSetupStatus()]);
+      const [list, status, m] = await Promise.all([listLegs(), getSetupStatus(), getRecordMode()]);
       setLegs(list);
       setActive(trip);
       setSetup(status);
+      setMode(m);
+      setRecorder(NjiaTracker ? NjiaTracker.getStatus() : null);
     } catch (err) {
       setNotice('Could not read saved trips: ' + String((err as Error)?.message || err));
     }
@@ -79,33 +91,39 @@ export function HomeScreen({ onOpenTrip, onOpenSetup }: Props) {
         startupDone.current = true;
         let state: StartupState = 'idle';
         try {
-          state = await checkOnStartup();
-        } catch {
-          /* handled by refresh below */
+          state = await checkOnStartup((n) => {
+            if (n >= 2000) setNotice(`Bringing in ${n.toLocaleString()} recorded points…`);
+          });
+          setNotice(null);
+        } catch (err) {
+          setNotice('Could not bring in recorded points: ' + String((err as Error)?.message || err));
         }
         if (state === 'resumed') {
-          setNotice('Android had paused the recording. It has been started again; the missing part will show as "No data".');
+          setNotice('The recorder had been stopped (by Android or a battery manager). It is running again; the missing part shows as "No data".');
         } else if (state === 'interrupted') {
-          setNotice('The recording was interrupted and could not restart. Tap "Stop and save" to keep what was recorded.');
+          setNotice('The recorder had stopped and could not start again. Open Setup and check every step is done.');
+        } else if (state === 'missing') {
+          setNotice('This copy of Njia has no recorder. Install the newest APK from GitHub Releases.');
         }
         try {
           await ensureLegsUpToDate(); // also cuts recordings made with the older version into trips
         } catch (err) {
           setNotice('Could not work out trips: ' + String((err as Error)?.message || err));
         }
+        startupFinished.current = true;
       }
       await refresh();
     })();
   }, [refresh]);
 
-  // While recording, re-read the live numbers every 2 seconds (only while the app is on screen).
+  // While recording, bring in new points every 5 seconds (only while the app is on screen).
   useEffect(() => {
-    if (!active) return;
-    let timer: ReturnType<typeof setInterval> | null = setInterval(refresh, 2000);
+    if (!active && mode !== 'always') return;
+    let timer: ReturnType<typeof setInterval> | null = setInterval(refresh, 5000);
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') {
         refresh();
-        if (!timer) timer = setInterval(refresh, 2000);
+        if (!timer) timer = setInterval(refresh, 5000);
       } else if (timer) {
         clearInterval(timer);
         timer = null;
@@ -115,7 +133,7 @@ export function HomeScreen({ onOpenTrip, onOpenSetup }: Props) {
       if (timer) clearInterval(timer);
       sub.remove();
     };
-  }, [active?.id, refresh]);
+  }, [active?.id, mode, refresh]);
 
   // Coming back from Android settings or another screen: re-check everything.
   useEffect(() => {
@@ -141,6 +159,18 @@ export function HomeScreen({ onOpenTrip, onOpenSetup }: Props) {
       if (!status.notifications) await requestNotifications();
       await startRecording();
       lastLive.current = { at: 0, points: -1 };
+    } catch (err) {
+      Alert.alert('Cannot start', String((err as Error)?.message || err));
+    }
+    await refresh();
+    setBusy(false);
+  };
+
+  /** Always on: the recorder was found stopped. */
+  const onRestart = async () => {
+    setBusy(true);
+    try {
+      await enableAlwaysOn();
     } catch (err) {
       Alert.alert('Cannot start', String((err as Error)?.message || err));
     }
@@ -178,7 +208,7 @@ export function HomeScreen({ onOpenTrip, onOpenSetup }: Props) {
   const activeLegs = active ? legs.filter((l) => l.trip_id === active.id && l.mode !== 'still') : [];
   const lastActiveIdx = activeLegs.length ? Math.max(...activeLegs.map((l) => l.idx)) : -1;
   const sections = byDay(legs);
-  const setupNeeded = setup != null && !isReady(setup);
+  const setupNeeded = setup != null && !isReady(setup, mode === 'always');
 
   const header = (
     <View>
@@ -210,14 +240,26 @@ export function HomeScreen({ onOpenTrip, onOpenSetup }: Props) {
       ) : null}
 
       <View style={styles.cardWrap}>
-        <RecordCard
-          active={active}
-          tripsSoFar={activeLegs.length}
-          busy={busy}
-          onStart={onStart}
-          onStop={onStop}
-          onViewLive={() => active && onOpenTrip(active.id, null)}
-        />
+        {mode === 'always' ? (
+          <AlwaysCard
+            status={recorder}
+            today={active}
+            tripsToday={activeLegs.length}
+            busy={busy}
+            onViewToday={() => active && onOpenTrip(active.id, null)}
+            onRestart={onRestart}
+            onOpenSetup={onOpenSetup}
+          />
+        ) : (
+          <RecordCard
+            active={active}
+            tripsSoFar={activeLegs.length}
+            busy={busy}
+            onStart={onStart}
+            onStop={onStop}
+            onViewLive={() => active && onOpenTrip(active.id, null)}
+          />
+        )}
       </View>
 
       <Text style={styles.listTitle}>Trips</Text>

@@ -8,7 +8,7 @@
  */
 import { analyze } from '../core/analyze';
 import { HOLD_ANALYZE, Segmentation, resolveMode, segment } from '../core/segment';
-import { Edit, ModeOverride, Place, RawPoint, TripSettings } from '../core/types';
+import { Analysis, Edit, ModeOverride, Place, RawPoint, TripSettings } from '../core/types';
 import { getDb, getMeta, setMeta } from './db';
 import { getEdits, getModes } from './edits';
 import { listPlaces } from './places';
@@ -62,7 +62,13 @@ export async function loadInputs(tripId: number): Promise<Loaded> {
 }
 
 export function segmentInputs(x: Loaded): Segmentation {
-  return segment(analyze(x.points, HOLD_ANALYZE), x.places, x.edits, { destMinS: x.settings.destMinS });
+  return analyzeInputs(x).seg;
+}
+
+/** The analysis and the trips of a recording (same as the viewer works out). */
+export function analyzeInputs(x: Loaded): { a: Analysis; seg: Segmentation } {
+  const a = analyze(x.points, HOLD_ANALYZE);
+  return { a, seg: segment(a, x.places, x.edits, { destMinS: x.settings.destMinS }) };
 }
 
 function rowsFor(tripId: number, x: Loaded): LegRow[] {

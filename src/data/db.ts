@@ -26,6 +26,8 @@ async function open(): Promise<SQLite.SQLiteDatabase> {
   const db = await SQLite.openDatabaseAsync('njia.db');
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = FULL;
+    PRAGMA busy_timeout = 5000;
 
     CREATE TABLE IF NOT EXISTS trips (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +124,16 @@ async function open(): Promise<SQLite.SQLiteDatabase> {
   `);
   // Reserved for the next part (Wi-Fi upload): remembers what was already sent.
   await ensureColumn(db, 'trips', 'synced_at', 'INTEGER');
+  // Always on: one recording per day. Holds the day, e.g. "2026-11-25".
+  await ensureColumn(db, 'trips', 'auto_day', 'TEXT');
+  // Where a point came from: 0 GPS, 1 "still here" check with GPS off, 2 wake-up reading.
+  await ensureColumn(db, 'points', 'src', 'INTEGER');
+  try {
+    // Importing the same point twice (after a crash) must not create a duplicate.
+    await db.execAsync('CREATE UNIQUE INDEX IF NOT EXISTS idx_points_trip_t_unique ON points (trip_id, t)');
+  } catch {
+    // Older recordings with duplicate times: keep working without the index.
+  }
   return db;
 }
 

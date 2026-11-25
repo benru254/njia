@@ -28,11 +28,13 @@ module.exports = {
       [
         'expo-location',
         {
-          // Recording runs as a visible "foreground service" (the notification),
-          // so the app only needs "While using the app" location permission.
-          isAndroidBackgroundLocationEnabled: false,
+          // Manual recording needs only "While using the app" (it runs as a foreground
+          // service with a notification). Always on also needs "Allow all the time",
+          // so the recorder may start again by itself after a phone restart.
+          isAndroidBackgroundLocationEnabled: true,
           isAndroidForegroundServiceEnabled: true,
-          locationWhenInUsePermission: 'Njia records your position to draw the path of your trip.',
+          locationWhenInUsePermission: 'Njia records your position to draw the path of your trips.',
+          locationAlwaysAndWhenInUsePermission: 'Njia records your trips by itself, even after the phone restarts.',
         },
       ],
       'expo-sqlite',

@@ -20,7 +20,9 @@ import {
   formatTimeSec,
 } from '../../src/core/format';
 import { compassName } from '../../src/core/geo';
-import { googleMapsUrl, googleNavigateUrl } from '../../src/core/links';
+import { buildKml } from '../../src/core/kml';
+import { googleMapsUrl, googleNavigateUrl, googleRouteUrl } from '../../src/core/links';
+import { evenlyAlong } from '../../src/core/simplify';
 import {
   DEST_MIN_CHOICES,
   Dwell,
@@ -460,6 +462,10 @@ function tripTab(): string {
         (m) => `<option value="${m}"${m === mode ? ' selected' : ''}>${MODE_LABEL[m]}</option>`
       ).join('')}</select></label>` +
       '<div class="acts big">' +
+      '<button type="button" data-act="route" class="gm">Open this trip in Google Maps</button>' +
+      '</div>' +
+      '<p class="note">Google Maps draws its own road route through 8 points of your real path: close to where you went, not exact.</p>' +
+      '<div class="acts big">' +
       `<button type="button" data-act="split-here">Split this trip at ${formatTime(cursorT)}</button>` +
       (l.from.kind === 'dest' ? '<button type="button" data-act="join-prev">Join with previous trip</button>' : '') +
       (l.to.kind === 'dest' ? '<button type="button" data-act="join-next">Join with next trip</button>' : '') +
@@ -603,6 +609,34 @@ function splitHere() {
   toast('Trip split in two.');
 }
 
+/** Open the trip in Google Maps, routed through 8 points of the real path. */
+function openRoute(l: Leg) {
+  if (!base) return;
+  const pts = base.points.slice(l.departIdx, l.arriveIdx + 1);
+  const via = evenlyAlong(pts, 8).map((i) => pts[i]);
+  const mode = modeOf(l);
+  openUrl(googleRouteUrl(l.from, l.to, via, mode === 'walk' ? 'walking' : 'driving'));
+}
+
+/** PC viewer: save the recording as a KML file for Google Earth or Google My Maps. */
+function saveKml() {
+  if (!base || !seg || !base.points.length) {
+    toast('Open a recording first.');
+    return;
+  }
+  const title = meta?.name || `Njia ${formatDate(base.stats.startTime)}`;
+  const kml = buildKml(base, seg, { title, modes, vehicle: settings.vehicle });
+  const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${title.replace(/[^\w\- ]+/g, '').trim() || 'njia'}.kml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('KML saved. Open it in Google Earth, or import it at mymaps.google.com to see it in Google Maps.');
+}
+
 function joinAt(e: Endpoint) {
   if (e.kind !== 'dest') return;
   changeEdits(withJoin(edits, { start: e.arriveT, end: e.leaveT }));
@@ -670,6 +704,9 @@ function onAction(btn: HTMLElement) {
     }
     case 'split-here':
       splitHere();
+      break;
+    case 'route':
+      if (l) openRoute(l);
       break;
     case 'join-prev':
       if (l) joinAt(l.from);
@@ -797,6 +834,7 @@ if (!embedded) {
   empty.hidden = false;
   $('btn-choose').addEventListener('click', () => fileInput.click());
   $('btn-open').addEventListener('click', () => fileInput.click());
+  $('btn-kml').addEventListener('click', saveKml);
   fileInput.addEventListener('change', () => {
     openFile(fileInput.files?.[0]);
     fileInput.value = '';

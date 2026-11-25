@@ -28,9 +28,22 @@ To update later: download the newer `.apk` and install it over the old one. Your
 
 ## 2. Record
 
-1. Tap **Start recording**. A permanent notification "Njia is recording your trip" appears. That notification is what keeps recording alive with the screen off.
-2. Go about your day. You can lock the phone or use other apps. One recording can last the whole day.
-3. Tap **Stop and save**. The recording opens with all its trips.
+**Always on (recommended):** Setup › How recording starts › **Always on**. Allow location **"Allow all the time"** when asked.
+Njia then records by itself, every day, also after the phone restarts or the battery dies. There is no Start or Stop:
+open the app any time to see your trips. Each day is one recording, cut into trips.
+
+**Manual:** tap **Start recording**, then **Stop and save**.
+
+How it saves battery: after 3 minutes without moving (1.5 minutes at a place you named, like Home or Office) the GPS
+switches off. A cheap Wi-Fi / mobile-network check every minute, and the phone's motion sensor, switch it back on when
+you leave.
+
+How it keeps your data: every GPS point is written to storage the moment it arrives, so a dead battery loses at most
+the point being written. The recorder runs on its own (it does not need the app open) and is restarted after a phone
+restart, after an app update, and by a 15-minute watchdog if a battery manager stopped it.
+
+**Hiding the notification:** Android 13 and newer: Setup › Hide the notification › turn off notifications for Njia.
+Recording continues. On Android 12 and older it cannot be hidden fully; it is set to the quietest level.
 
 ## 3. How a day is cut into trips
 
@@ -60,7 +73,20 @@ A completely still jam of 5+ minutes can look like a destination: tap **Not a de
 - A pause that was really a destination: **Make it a destination**.
 - One trip that should be two: drag the chart to the moment, then **Split this trip at …**.
 
-## 5. View on your PC
+## 5. See it on Google Maps / Google Earth
+
+Google does not let other apps add to its Timeline, so these are the two ways:
+
+- **Google Earth (phone):** open a recording, tap **Google Earth**, choose Google Earth. Every trip is a coloured line,
+  every stop a named pin.
+- **Google Maps (phone, after a one-time import on a PC):** tap **Google Earth**, save the file to Google Drive. On a PC
+  open mymaps.google.com › Create a new map › Import › pick the file. The map now appears in the Google Maps app under
+  **You › Maps** (or Saved › Maps).
+- **One trip in Google Maps:** in a trip's **Trip** tab tap **Open this trip in Google Maps**. Google draws its own road
+  route through 8 points of your real path: close to where you went, not exact.
+- **Single points:** **Google Maps** and **Navigate** on every stop.
+
+## 6. View on your PC
 
 1. From any release, download **`njia-viewer.html`** to your PC (once).
 2. On the phone, open a trip and tap **Send to PC**. Send the file to yourself (WhatsApp, email, Google Drive, Bluetooth or USB cable).
@@ -70,12 +96,14 @@ The viewer also opens `.gpx` files from other GPS apps. Nothing is uploaded: the
 
 **Share GPX** makes a standard file for other map apps. Open it in **Organic Maps** to see the path on a fully offline street map.
 
-## 6. What to expect (honest limits)
+## 7. What to expect (honest limits)
 
 | | |
 |---|---|
 | Accuracy | About 3–5 m under open sky. 10–30 m between tall buildings, inside vehicles or indoors. |
-| Battery | Recording every 3 seconds all day uses noticeable battery. Change the interval in Setup. |
+| Battery | GPS is on only while you move. At home and in the office it is off (Wi-Fi / network checks only). |
+| Start of a trip | Phones without a motion sensor notice you leaving at the next check (up to 1 minute): the first few hundred metres of a trip are then drawn as a straight line. |
+| Phone switched off | Nothing can record while the phone is off. After it restarts, Njia continues by itself once the phone is unlocked the first time. |
 | Street map background | Needs internet the first time you view an area. The path, speeds and stops never need internet. |
 | Phones that kill apps | Tecno, Infinix, itel, Xiaomi, Oppo, Vivo and Huawei need the extra steps shown in Setup. |
 | Privacy | Trips never leave the phone unless you tap a Share button. |
@@ -89,6 +117,8 @@ The viewer also opens `.gpx` files from other GPS apps. Nothing is uploaded: the
 **Done**
 - Part 1: offline recording in the background, map view, speed colours, arrows, replay, speed chart, GPX, PC viewer, automatic APK build
 - Part 2: a day cut into separate trips, destinations vs pauses vs traffic, one-tap Split / Join, named places, Google Maps and Navigate buttons, walking / vehicle per trip
+
+- Part 3: Always on (no Start / Stop), automatic GPS-off when still, restart after phone restart, data saved on every point, hideable notification, Google Earth / My Maps export, trips in Google Maps
 
 **Not built yet (ideas)**
 - Automatic upload when the phone is on Wi-Fi, to your PC and to a cloud database
@@ -112,7 +142,9 @@ Folder map:
 App.tsx, index.ts      app entry (index.ts registers the background GPS job first)
 src/core/              pure logic: filtering, stops, cutting a day into trips (segment.ts), GPX. No phone code. Tested.
 src/data/              the on-phone database and file export
-src/tracking/          background recording and Android permissions
+modules/njia-tracker/  the native recorder (Kotlin): runs without the app, power modes, restart after reboot
+src/data/importer.ts   moves points from the recorder into recordings (one per day in Always on)
+src/tracking/          switching recording on/off, Android permissions
 src/screens/           Home, Trip, Setup
 src/components/        small reusable pieces
 viewer/                the map page (runs inside the app AND on a PC)

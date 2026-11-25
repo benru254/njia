@@ -16,7 +16,8 @@ Install packages with `npx expo install <package>` so versions match the SDK.
 
 ## What must not be broken
 
-- **`index.ts` imports `./src/tracking/task` first.** The background GPS job must be registered before anything else. Do not reorder.
+- **Recording is done by the native recorder in `modules/njia-tracker/` (Kotlin).** It writes points to its own file `njia-buffer.db`; ONLY that Kotlin code may open that file (two SQLite libraries on one file can corrupt it). The app imports points through `src/data/importer.ts`.
+- **`index.ts` imports `./src/tracking/task` first.** That is the old Expo location task (version 1.0.2 and older); it stays defined so phones updated from old versions can switch it off cleanly. Do not reorder.
 - **`src/core/` stays pure TypeScript.** No `react-native`, `expo-*` or browser imports there. The phone app, the viewer and the tests all share it.
 - **The database only grows.** Add tables with `CREATE TABLE IF NOT EXISTS` and columns with `ensureColumn()` in `src/data/db.ts`. Never drop, rename or reset. Real trips live on the owner's phone.
 - **Offline first.** Recording, saving, viewing the path, stops and stats must work with no network. Only the street-map background may need internet.

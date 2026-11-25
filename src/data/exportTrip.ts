@@ -1,10 +1,11 @@
 /** Turn a saved recording into a file and hand it to Android's Share sheet. */
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { fileStamp, formatDurationShort, formatTime } from '../core/format';
+import { fileStamp, formatDate, formatDurationShort, formatTime } from '../core/format';
+import { buildKml } from '../core/kml';
 import { GpxWaypoint, TripMeta, buildGpx, buildTripFile } from '../core/tripFile';
 import { RawPoint, TripFile } from '../core/types';
-import { loadInputs, segmentInputs } from './legs';
+import { analyzeInputs, loadInputs, segmentInputs } from './legs';
 import { TripRow } from './trips';
 
 export function metaOf(trip: TripRow): TripMeta {
@@ -56,6 +57,24 @@ export async function shareGpx(trip: TripRow): Promise<void> {
   }));
   const gpx = buildGpx(metaOf(trip), x.points, waypoints);
   await shareText(`njia_${fileStamp(trip.started_at)}.gpx`, gpx, 'application/gpx+xml', 'Share recording (GPX)');
+}
+
+/**
+ * KML for Google Earth (opens directly on the phone) or Google My Maps
+ * (import on a PC; the map then shows in the Google Maps app under Saved › Maps).
+ */
+export async function shareKml(trip: TripRow): Promise<void> {
+  const x = await loadInputs(trip.id);
+  if (!x.points.length) throw new Error('This recording has no GPS points yet.');
+  const { a, seg } = analyzeInputs(x);
+  const title = trip.name || `Njia ${formatDate(trip.started_at)}`;
+  const kml = buildKml(a, seg, { title, modes: x.modes, vehicle: x.settings.vehicle });
+  await shareText(
+    `njia_${fileStamp(trip.started_at)}.kml`,
+    kml,
+    'application/vnd.google-earth.kml+xml',
+    'Open in Google Earth, or save to Drive for My Maps'
+  );
 }
 
 /** Njia backup: the full recording with your corrections and named places, for the PC viewer. */

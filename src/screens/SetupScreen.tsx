@@ -2,9 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn } from '../components/Btn';
+import { NjiaTracker, TrackerEvent } from '../../modules/njia-tracker';
+import { formatDate, formatTime } from '../core/format';
 import { DEST_MIN_CHOICES } from '../core/segment';
 import { DEFAULT_SETTINGS, MODE_LABEL, Place, TravelMode, TripSettings } from '../core/types';
 import { rebuildAllLegs } from '../data/legs';
+import { RecordMode, STILL_CHECK_CHOICES, getRecordMode, getStillCheckS, setStillCheckS } from '../data/mode';
 import { deletePlace, listPlaces } from '../data/places';
 import { getSettings, setDestMinS, setVehicle } from '../data/settings';
 import { getActiveTripId } from '../data/trips';
@@ -16,8 +19,18 @@ import {
   requestGpsOn,
   requestLocation,
   requestNotifications,
+  requestBackgroundLocation,
+  openNotificationSettings,
+  canHideNotification,
 } from '../tracking/permissions';
-import { INTERVAL_CHOICES, getIntervalS, setIntervalS } from '../tracking/recorder';
+import {
+  INTERVAL_CHOICES,
+  applySettings,
+  disableAlwaysOn,
+  enableAlwaysOn,
+  getIntervalS,
+  setIntervalS,
+} from '../tracking/recorder';
 
 interface Props {
   onBack: () => void;
@@ -86,8 +99,15 @@ export function SetupScreen({ onBack }: Props) {
   const [trip, setTrip] = useState<TripSettings>(DEFAULT_SETTINGS);
   const [places, setPlaces] = useState<Place[]>([]);
   const [working, setWorking] = useState<string | null>(null);
+  const [mode, setMode] = useState<RecordMode>('manual');
+  const [stillCheck, setStillCheck] = useState(60);
+  const [events, setEvents] = useState<TrackerEvent[]>([]);
+  const [modeBusy, setModeBusy] = useState(false);
 
   const refresh = useCallback(async () => {
+    setMode(await getRecordMode());
+    setStillCheck(await getStillCheckS());
+    if (NjiaTracker) setEvents(await NjiaTracker.getEvents(30).catch(() => []));
     setStatus(await getSetupStatus());
     setIntervalState(await getIntervalS());
     setRecording((await getActiveTripId()) != null);
@@ -101,6 +121,7 @@ export function SetupScreen({ onBack }: Props) {
     try {
       await job();
       await rebuildAllLegs();
+      await applySettings(); // the recorder saves battery sooner at named places
     } catch (err) {
       Alert.alert('Could not save', String((err as Error)?.message || err));
     }
@@ -124,6 +145,32 @@ export function SetupScreen({ onBack }: Props) {
     return () => sub.remove();
   }, [refresh]);
 
+  const chooseMode = async (m: RecordMode) => {
+    if (modeBusy || m === mode) return;
+    setModeBusy(true);
+    try {
+      if (m === 'always') {
+        const st = await getSetupStatus();
+        if (!st.background) {
+          await requestBackgroundLocation();
+          if (!(await getSetupStatus()).background) {
+            throw new Error(
+              'Always on needs location "Allow all the time". On the page that opened, choose "Allow all the time", ' +
+                'then come back and choose Always on again.'
+            );
+          }
+        }
+        await enableAlwaysOn();
+      } else {
+        await disableAlwaysOn();
+      }
+    } catch (err) {
+      Alert.alert('Not changed', String((err as Error)?.message || err));
+    }
+    setModeBusy(false);
+    refresh();
+  };
+
   const run = (fn: () => Promise<void>) => async () => {
     try {
       await fn();
@@ -143,7 +190,27 @@ export function SetupScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: S.pad, paddingBottom: insets.bottom + 32 }}>
-        <Text style={styles.section}>Make recording reliable</Text>
+        <Text style={styles.section}>How recording starts</Text>
+        {modeBusy ? (
+          <View style={styles.working}>
+            <ActivityIndicator color={C.accent} />
+            <Text style={styles.workingText}>Switching…</Text>
+          </View>
+        ) : null}
+        <Choice
+          on={mode === 'always'}
+          label="Always on"
+          hint="Records by itself all day, every day, also after the phone restarts. No Start or Stop. GPS switches off while you are still, to save battery. Each day is one recording, cut into trips."
+          onPress={() => chooseMode('always')}
+        />
+        <Choice
+          on={mode === 'manual'}
+          label="Manual"
+          hint="Records only between Start recording and Stop."
+          onPress={() => chooseMode('manual')}
+        />
+
+        <Text style={[styles.section, { marginTop: 28 }]}>Make recording reliable</Text>
         <Text style={styles.intro}>
           Android tries to save battery by stopping apps when the screen is off. These four steps tell it to leave
           Njia alone while a trip is being recorded.
@@ -162,6 +229,15 @@ export function SetupScreen({ onBack }: Props) {
               action="Allow location"
               onPress={run(requestLocation)}
             />
+            {mode === 'always' ? (
+              <Step
+                ok={status.background}
+                title="1b. Location: Allow all the time"
+                why="Needed for Always on: lets the recorder start again by itself after the phone restarts or the battery dies."
+                action="Allow all the time"
+                onPress={run(requestBackgroundLocation)}
+              />
+            ) : null}
             <Step
               ok={status.gpsOn}
               title="2. Switch Location (GPS) on"
@@ -172,7 +248,11 @@ export function SetupScreen({ onBack }: Props) {
             <Step
               ok={status.notifications}
               title="3. Allow notifications"
-              why="Shows the “Njia is recording” notice, so you always know when you are being recorded."
+              why={
+                mode === 'always' && canHideNotification
+                  ? 'Optional with Always on: you may hide the notice instead (see “Hide the notification” below).'
+                  : 'Shows the “Njia is recording” notice, so you always know when you are being recorded.'
+              }
               action="Allow notifications"
               onPress={run(requestNotifications)}
             />
@@ -197,6 +277,45 @@ export function SetupScreen({ onBack }: Props) {
             • In Settings › Battery, set Njia to “No restrictions”.
           </Text>
         </View>
+
+        <Text style={[styles.section, { marginTop: 28 }]}>Hide the notification</Text>
+        <Text style={styles.intro}>
+          {canHideNotification
+            ? 'Android must show that an app uses GPS in the background, but on this phone you can hide it: turn off ' +
+              'notifications for Njia. Recording continues; Njia then only appears in the “Active apps” list at the ' +
+              'bottom of your quick settings. The notice is already set to the quietest level (no sound, no icon in ' +
+              'the status bar on most phones).'
+            : 'This phone runs Android 12 or older. Android does not allow hiding this notice completely there. It is set ' +
+              'to the quietest level: no sound, folded away at the bottom of the list, and no icon in the status bar on ' +
+              'most phones. If you turn it off, Android shows its own “running in background” notice instead.'}
+        </Text>
+        <Btn label="Open Njia notification settings" onPress={run(openNotificationSettings)} style={styles.stepBtn} />
+
+        <Text style={[styles.section, { marginTop: 28 }]}>Battery saving when you are still</Text>
+        <Text style={styles.intro}>
+          After 3 minutes without moving (1.5 minutes at a place you named, such as Home or Office) the GPS is switched
+          off. Njia then checks with Wi-Fi and the mobile network whether you have left, which uses very little power.
+          {NjiaTracker && NjiaTracker.getStatus().motionSensor
+            ? ' This phone also has a motion sensor, which wakes the GPS the moment you start moving.'
+            : ' This phone has no motion sensor, so leaving is noticed at the next check.'}{' '}
+          How often should it check?
+        </Text>
+        {STILL_CHECK_CHOICES.map((c) => (
+          <Choice
+            key={c.seconds}
+            on={c.seconds === stillCheck}
+            label={c.label}
+            hint={c.hint}
+            onPress={async () => {
+              setStillCheck(c.seconds);
+              await setStillCheckS(c.seconds);
+              await applySettings();
+            }}
+          />
+        ))}
+        <Text style={styles.intro}>
+          Tip: name your home and office (open a trip, tap a stop, “Name this place”). Njia saves battery sooner there.
+        </Text>
 
         <Text style={[styles.section, { marginTop: 28 }]}>When does a stop end a trip?</Text>
         <Text style={styles.intro}>
@@ -257,7 +376,7 @@ export function SetupScreen({ onBack }: Props) {
           </View>
         ))}
 
-        <Text style={[styles.section, { marginTop: 28 }]}>How often to record a point</Text>
+        <Text style={[styles.section, { marginTop: 28 }]}>How often to record a point while moving</Text>
         {recording ? <Text style={styles.intro}>A change here applies from your next trip.</Text> : null}
         {INTERVAL_CHOICES.map((c) => (
           <Choice
@@ -280,6 +399,23 @@ export function SetupScreen({ onBack }: Props) {
           speeds and stops always work offline.{'\n'}
           • For a full offline street map, tap “Share GPX” on a trip and open it in Organic Maps.
         </Text>
+        <Text style={[styles.section, { marginTop: 28 }]}>Recorder diary</Text>
+        <Text style={styles.intro}>
+          What the recorder did lately, newest first. If a trip has a gap, look here: “stopped by Android” or “could
+          not restart” means a phone setting above is still blocking Njia.
+        </Text>
+        {events.length ? (
+          <View style={styles.diary}>
+            {events.map((e, i) => (
+              <Text key={i} style={[styles.diaryLine, e.kind === 'error' ? { color: C.warn } : null]}>
+                {formatDate(e.t).slice(4, 10)} {formatTime(e.t)} · {e.kind}
+                {e.detail ? ` · ${e.detail}` : ''}
+              </Text>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.intro}>Nothing yet.</Text>
+        )}
       </ScrollView>
     </View>
   );
@@ -350,6 +486,8 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     backgroundColor: C.card,
   },
+  diary: { marginTop: 8, padding: 10, borderRadius: S.radius, borderWidth: 1, borderColor: C.line, backgroundColor: C.card },
+  diaryLine: { color: C.text, fontSize: 12, lineHeight: 18, fontVariant: ['tabular-nums'] },
   placeName: { flex: 1, color: C.text, fontSize: 15, fontWeight: '600', marginRight: 10 },
   placeBtn: { minHeight: 36, paddingHorizontal: 12 },
 });

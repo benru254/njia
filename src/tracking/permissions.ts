@@ -17,13 +17,16 @@ export interface SetupStatus {
   notifications: boolean;
   /** Android will NOT put this app to sleep to save battery. */
   batteryFree: boolean;
+  /** Location "Allow all the time" (needed for Always on). */
+  background: boolean;
 }
 
 const needsNotificationPermission = Platform.OS === 'android' && Number(Platform.Version) >= 33;
 
 export async function getSetupStatus(): Promise<SetupStatus> {
-  const [perm, gpsOn, notifications, optimised] = await Promise.all([
+  const [perm, bg, gpsOn, notifications, optimised] = await Promise.all([
     Location.getForegroundPermissionsAsync().catch(() => null),
+    Location.getBackgroundPermissionsAsync().catch(() => null),
     Location.hasServicesEnabledAsync().catch(() => false),
     needsNotificationPermission
       ? PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(() => false)
@@ -38,10 +41,41 @@ export async function getSetupStatus(): Promise<SetupStatus> {
     gpsOn,
     notifications,
     batteryFree: !optimised,
+    background: !!bg?.granted,
   };
 }
 
-export const isReady = (s: SetupStatus) => s.location && s.precise && s.gpsOn && s.batteryFree;
+/** Everything needed for reliable recording. Always on also needs "Allow all the time". */
+export const isReady = (s: SetupStatus, always = false) =>
+  s.location && s.precise && s.gpsOn && s.batteryFree && (!always || s.background);
+
+/**
+ * Ask for location "Allow all the time". Android shows its settings page for this;
+ * the user must pick "Allow all the time" there.
+ */
+export async function requestBackgroundLocation(): Promise<void> {
+  const fg = await Location.getForegroundPermissionsAsync();
+  if (!fg.granted) {
+    await requestLocation();
+    if (!(await Location.getForegroundPermissionsAsync()).granted) return;
+  }
+  const res = await Location.requestBackgroundPermissionsAsync();
+  if (!res.granted && !res.canAskAgain) await Linking.openSettings();
+}
+
+/** Open Njia's notification settings, where the recording notice can be switched off. */
+export async function openNotificationSettings(): Promise<void> {
+  try {
+    await IntentLauncher.startActivityAsync(IntentLauncher.ActivityAction.APP_NOTIFICATION_SETTINGS, {
+      extra: { 'android.provider.extra.APP_PACKAGE': ANDROID_PACKAGE },
+    });
+  } catch {
+    await Linking.openSettings();
+  }
+}
+
+/** Android 13 and newer can hide the recording notice completely. */
+export const canHideNotification = Platform.OS === 'android' && Number(Platform.Version) >= 33;
 
 /** Ask for location. If Android will not ask again, open the app's settings page instead. */
 export async function requestLocation(): Promise<void> {

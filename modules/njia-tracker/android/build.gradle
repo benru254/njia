@@ -1,0 +1,23 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.njiatracker'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.njiatracker"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  implementation 'com.google.android.gms:play-services-location:21.0.1'
+  implementation "androidx.core:core-ktx:1.17.0"
+}
