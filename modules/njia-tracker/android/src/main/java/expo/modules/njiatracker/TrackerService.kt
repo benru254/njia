@@ -11,16 +11,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.hardware.Sensor
-import android.hardware.SensorManager
-import android.hardware.TriggerEvent
-import android.hardware.TriggerEventListener
 import android.location.Location
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
-import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -33,16 +28,12 @@ import com.google.android.gms.location.Priority
 
 /**
  * The recorder. Runs as an Android "foreground service", which is what lets an
- * app keep using GPS with the screen off. It works without the app screen,
- * restarts after a phone restart, and has two power modes:
+ * app keep using GPS with the screen off. It works without the app screen and
+ * restarts after a phone restart.
  *
- *   MOVING  GPS on, a point every few seconds.
- *   STILL   GPS off. A cheap Wi-Fi / mobile-network position every minute checks
- *           you have not left, and the phone's "significant motion" sensor
- *           (a hardware chip that uses almost no power) wakes GPS the moment you move.
- *
- * You are STILL after 3 minutes without moving more than 30 m
- * (1.5 minutes at a place you named, such as home or the office).
+ * GPS stays ON at full accuracy the whole time it is recording, moving or not:
+ * accurate data comes first, battery second. (Version 1.0.3 switched GPS off when
+ * you were still; that caused straight-line jumps, so it was removed in 1.0.4.)
  */
 class TrackerService : Service() {
 
@@ -52,21 +43,9 @@ class TrackerService : Service() {
     private const val CHANNEL_ID = "njia-recording"
     private const val NOTIFICATION_ID = 4711
 
-    const val MODE_MOVING = "moving"
-    const val MODE_STILL = "still"
-
-    /** A fix this accurate (metres) is trusted to decide if you moved. */
-    private const val GOOD_ACC_M = 25f
-    /** Moving less than this (metres) does not count as moving. */
-    private const val STILL_RADIUS_M = 30f
-    /** In STILL mode, a low-power fix this far away (or 2x its accuracy) means you left. */
-    private const val WAKE_DIST_M = 120f
-    private const val TICK_MS = 15_000L
-
     // Read by the app screen (same process) to show the status.
     @Volatile var running = false
-    @Volatile var mode: String = MODE_MOVING
-    @Volatile var modeSince: Long = 0L
+    @Volatile var startedAt: Long = 0L
     @Volatile var lastFixT: Long = 0L
     @Volatile var lastFixAcc: Float = -1f
 
@@ -87,38 +66,10 @@ class TrackerService : Service() {
   private lateinit var fused: FusedLocationProviderClient
   private lateinit var thread: HandlerThread
   private lateinit var handler: Handler
-  private var sensorManager: SensorManager? = null
-  private var motionSensor: Sensor? = null
-  private var motionArmed = false
-
-  /** Where you were last seen standing (a trusted fix). */
-  private var anchor: Location? = null
-  /** When we last saw you really move (elapsed-realtime clock, not affected by clock changes). */
-  private var lastMoveElapsed = 0L
 
   private val callback = object : LocationCallback() {
     override fun onLocationResult(result: LocationResult) {
       for (loc in result.locations) onLocation(loc)
-    }
-  }
-
-  private val motionListener = object : TriggerEventListener() {
-    override fun onTrigger(event: TriggerEvent?) {
-      motionArmed = false
-      handler.post {
-        if (mode == MODE_STILL) {
-          // We were still right up to now: close the stay, then wake GPS.
-          anchor?.let { store.insertStill(it, System.currentTimeMillis()) }
-          enterMoving("motion sensor")
-        }
-      }
-    }
-  }
-
-  private val tick = object : Runnable {
-    override fun run() {
-      checkStill()
-      handler.postDelayed(this, TICK_MS)
     }
   }
 
@@ -131,8 +82,6 @@ class TrackerService : Service() {
     fused = LocationServices.getFusedLocationProviderClient(this)
     thread = HandlerThread("njia-recorder").also { it.start() }
     handler = Handler(thread.looper)
-    sensorManager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-    motionSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -151,16 +100,12 @@ class TrackerService : Service() {
     handler.post {
       if (!running) {
         running = true
-        mode = MODE_MOVING
-        modeSince = System.currentTimeMillis()
-        lastMoveElapsed = SystemClock.elapsedRealtime()
+        startedAt = System.currentTimeMillis()
         store.event("start", why)
-        handler.removeCallbacks(tick)
-        handler.postDelayed(tick, TICK_MS)
       } else if (reload) {
         store.event("settings", why)
       }
-      applyMode()
+      requestGps()
     }
     // If Android kills the recorder to free memory, it starts it again by itself.
     return START_STICKY
@@ -174,7 +119,6 @@ class TrackerService : Service() {
     } catch (e: Exception) {
       // already stopped
     }
-    disarmMotion()
     store.event("stop", if (prefs.enabled) "stopped by Android" else "switched off")
     thread.quitSafely()
     super.onDestroy()
@@ -185,21 +129,16 @@ class TrackerService : Service() {
     store.event("info", "app swiped away, recording continues")
   }
 
-  // ---------------------------------------------------------------- power modes
-
+  /** Full-accuracy GPS, one point every `intervalMs`, all the time. */
   @SuppressLint("MissingPermission")
-  private fun applyMode() {
-    val request = if (mode == MODE_MOVING) {
-      val ms = prefs.intervalMs
-      LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, ms)
-        .setMinUpdateIntervalMillis(ms)
-        .build()
-    } else {
-      val ms = prefs.stillCheckMs
-      LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, ms)
-        .setMinUpdateIntervalMillis(ms / 2)
-        .build()
-    }
+  private fun requestGps() {
+    val ms = prefs.intervalMs
+    val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, ms)
+      .setMinUpdateIntervalMillis(ms)
+      .setMinUpdateDistanceMeters(0f)
+      .setMaxUpdateDelayMillis(0)
+      .setWaitForAccurateLocation(false)
+      .build()
     try {
       fused.removeLocationUpdates(callback)
       fused.requestLocationUpdates(request, callback, thread.looper)
@@ -208,83 +147,13 @@ class TrackerService : Service() {
     } catch (e: Exception) {
       store.event("error", "location request failed: ${e.message}")
     }
-    if (mode == MODE_STILL) armMotion() else disarmMotion()
     updateNotification()
   }
 
   private fun onLocation(loc: Location) {
     lastFixT = loc.time
     lastFixAcc = if (loc.hasAccuracy()) loc.accuracy else -1f
-    val acc = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
-
-    if (mode == MODE_MOVING) {
-      store.insert(loc, PointStore.SRC_GPS)
-      if (acc <= GOOD_ACC_M) {
-        val a = anchor
-        val moved = a == null || a.distanceTo(loc) > STILL_RADIUS_M || (loc.hasSpeed() && loc.speed > 2f)
-        if (moved) {
-          anchor = loc
-          lastMoveElapsed = SystemClock.elapsedRealtime()
-        }
-      }
-      return
-    }
-
-    // STILL: GPS is off, this is a cheap Wi-Fi / mobile-network position.
-    val a = anchor
-    if (a == null) {
-      if (acc <= 100f) anchor = loc
-      store.insert(loc, PointStore.SRC_GPS)
-      return
-    }
-    val d = a.distanceTo(loc)
-    val moved = (acc <= 200f && d > maxOf(WAKE_DIST_M, acc * 2f)) ||
-      (loc.hasSpeed() && loc.speed > 4f && acc <= 50f)
-    if (moved) {
-      store.insertStill(a, System.currentTimeMillis() - 1_000L)
-      store.insert(loc, PointStore.SRC_WAKE)
-      enterMoving("moved about ${d.toInt()} m")
-    } else {
-      store.insertStill(a, System.currentTimeMillis())
-    }
-  }
-
-  /** Called every 15 s: has there been no real movement for long enough to switch GPS off? */
-  private fun checkStill() {
-    if (mode != MODE_MOVING) return
-    val a = anchor
-    val limit = if (a != null && prefs.nearPlace(a.latitude, a.longitude)) prefs.stillAfterPlaceMs else prefs.stillAfterMs
-    if (SystemClock.elapsedRealtime() - lastMoveElapsed >= limit) enterStill()
-  }
-
-  private fun enterStill() {
-    mode = MODE_STILL
-    modeSince = System.currentTimeMillis()
-    val a = anchor
-    if (a != null) store.insertStill(a, System.currentTimeMillis())
-    store.event("still", if (a != null) "GPS off, saving battery" else "GPS off (no GPS fix here)")
-    applyMode()
-  }
-
-  private fun enterMoving(why: String) {
-    mode = MODE_MOVING
-    modeSince = System.currentTimeMillis()
-    lastMoveElapsed = SystemClock.elapsedRealtime()
-    store.event("moving", "GPS on: $why")
-    applyMode()
-  }
-
-  private fun armMotion() {
-    val s = motionSensor ?: return
-    if (!motionArmed) motionArmed = sensorManager?.requestTriggerSensor(motionListener, s) == true
-  }
-
-  private fun disarmMotion() {
-    val s = motionSensor ?: return
-    if (motionArmed) {
-      sensorManager?.cancelTriggerSensor(motionListener, s)
-      motionArmed = false
-    }
+    store.insert(loc, PointStore.SRC_GPS)
   }
 
   // ---------------------------------------------------------------- notification
@@ -311,11 +180,10 @@ class TrackerService : Service() {
 
   private fun buildNotification(): Notification {
     ensureChannel()
-    val text = if (mode == MODE_STILL) "Still · GPS off, saving battery" else "Moving · GPS on"
     val builder = NotificationCompat.Builder(this, CHANNEL_ID)
       .setSmallIcon(R.drawable.njia_notification)
       .setContentTitle("Njia is recording")
-      .setContentText(text)
+      .setContentText("GPS on")
       .setOngoing(true)
       .setSilent(true)
       .setShowWhen(false)

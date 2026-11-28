@@ -2,8 +2,6 @@ package expo.modules.njiatracker
 
 import android.content.Context
 import android.content.Intent
-import android.hardware.Sensor
-import android.hardware.SensorManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -15,7 +13,7 @@ class NjiaTrackerModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("NjiaTracker")
 
-    /** Save settings: intervalMs, stillAfterMs, stillAfterPlaceMs, stillCheckMs, places [{lat, lon, radiusM}]. */
+    /** Save settings: intervalMs. */
     Function("configure") { config: Map<String, Any?> ->
       TrackerPrefs(context).update(config)
     }
@@ -37,16 +35,12 @@ class NjiaTrackerModule : Module() {
     }
 
     Function("getStatus") {
-      val ctx = context
-      val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
       mapOf(
-        "enabled" to TrackerPrefs(ctx).enabled,
+        "enabled" to TrackerPrefs(context).enabled,
         "running" to TrackerService.running,
-        "mode" to TrackerService.mode,
-        "modeSince" to TrackerService.modeSince.toDouble(),
+        "startedAt" to TrackerService.startedAt.toDouble(),
         "lastFixT" to TrackerService.lastFixT.toDouble(),
-        "lastFixAcc" to TrackerService.lastFixAcc.toDouble(),
-        "motionSensor" to (sm?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) != null)
+        "lastFixAcc" to TrackerService.lastFixAcc.toDouble()
       )
     }
 

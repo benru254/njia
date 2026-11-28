@@ -89,6 +89,7 @@ function buildView(
     .reduce((s, g) => s + g.durationS, 0);
   const movingS = Math.max(0, durationS - stoppedS - gapS);
   const distance = points[count - 1].dist;
+  const gapDist = gaps.reduce((s, g) => s + g.distanceM, 0);
 
   return {
     analysis: {
@@ -103,7 +104,7 @@ function buildView(
         movingS,
         stoppedS,
         gapS,
-        avgMovingSpeed: movingS > 0 ? distance / movingS : 0,
+        avgMovingSpeed: movingS > 0 ? Math.max(0, distance - gapDist) / movingS : 0,
         maxSpeed: topSpeed(points),
         pointCount: count,
         rawCount: count,

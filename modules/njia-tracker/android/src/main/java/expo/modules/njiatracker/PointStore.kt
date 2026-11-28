@@ -23,10 +23,7 @@ class PointStore private constructor(context: Context) :
   companion object {
     /** A normal GPS reading. */
     const val SRC_GPS = 0
-    /** "Still here": GPS was off to save battery, a cheap check confirmed you had not moved. */
-    const val SRC_STILL = 1
-    /** The low-power reading that showed you had started moving. */
-    const val SRC_WAKE = 2
+    // 1 and 2 were used by version 1.0.3 (GPS-off battery saving, removed). Do not reuse.
 
     @Volatile private var instance: PointStore? = null
 
@@ -70,20 +67,6 @@ class PointStore private constructor(context: Context) :
     if (loc.hasSpeed()) v.put("spd", loc.speed.toDouble())
     if (loc.hasBearing()) v.put("hdg", loc.bearing.toDouble())
     v.put("src", src)
-    safeInsert("points", v)
-  }
-
-  /** A "still here" point at the place where you stopped. */
-  @Synchronized
-  fun insertStill(at: Location, t: Long) {
-    val v = ContentValues()
-    v.put("t", t)
-    v.put("lat", at.latitude)
-    v.put("lon", at.longitude)
-    if (at.hasAccuracy()) v.put("acc", at.accuracy.toDouble())
-    if (at.hasAltitude()) v.put("alt", at.altitude)
-    v.put("spd", 0.0)
-    v.put("src", SRC_STILL)
     safeInsert("points", v)
   }
 

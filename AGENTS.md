@@ -16,6 +16,7 @@ Install packages with `npx expo install <package>` so versions match the SDK.
 
 ## What must not be broken
 
+- **GPS stays on at full accuracy while recording.** The owner chose accuracy over battery: do not add GPS-off or low-power modes again (1.0.3 tried it and produced straight-line jumps).
 - **Recording is done by the native recorder in `modules/njia-tracker/` (Kotlin).** It writes points to its own file `njia-buffer.db`; ONLY that Kotlin code may open that file (two SQLite libraries on one file can corrupt it). The app imports points through `src/data/importer.ts`.
 - **`index.ts` imports `./src/tracking/task` first.** That is the old Expo location task (version 1.0.2 and older); it stays defined so phones updated from old versions can switch it off cleanly. Do not reorder.
 - **`src/core/` stays pure TypeScript.** No `react-native`, `expo-*` or browser imports there. The phone app, the viewer and the tests all share it.

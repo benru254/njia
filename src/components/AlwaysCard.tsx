@@ -42,14 +42,12 @@ export function AlwaysCard({ status, today, tripsToday, busy, onViewToday, onRes
   if (!running) {
     line = 'The recorder is not running. Tap "Start again".';
     lineColor = C.warn;
-  } else if (status!.mode === 'still') {
-    line = `Still since ${formatTime(status!.modeSince)} · GPS off, saving battery`;
   } else if (!status!.lastFixT || now - status!.lastFixT > 60_000) {
-    line = 'Moving mode · looking for GPS satellites…';
+    line = 'GPS on · no signal right now (indoors?). Recording continues when it returns.';
     lineColor = C.warn;
   } else {
-    const acc = status!.lastFixAcc > 0 ? ` (±${Math.round(status!.lastFixAcc)} m)` : '';
-    line = `Moving · GPS on${acc}`;
+    const acc = status!.lastFixAcc > 0 ? ` · accurate to about ${Math.round(status!.lastFixAcc)} m` : '';
+    line = `GPS on${acc} · last point ${formatTime(status!.lastFixT)}`;
   }
 
   return (

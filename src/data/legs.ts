@@ -16,7 +16,7 @@ import { getSettings } from './settings';
 import { getPoints, listTrips } from './trips';
 
 /** Bump this when the trip-splitting rules change, so old lists are redone once. */
-export const LEGS_VERSION = '1';
+export const LEGS_VERSION = '2';
 
 export interface LegRow {
   trip_id: number;

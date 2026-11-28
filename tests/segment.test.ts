@@ -247,3 +247,24 @@ describe('walking and odd cases', () => {
     expect(googleNavigateUrl(-1.2864, 36.8172)).toContain('/maps/dir/?api=1&destination=-1.286400,36.817200');
   });
 });
+
+describe('jumps over missing data (the 1.0.3 GPS-off problem)', () => {
+  it('a 60 km jump in one minute is "no data", not a 3600 km/h ride', () => {
+    const before = simulate([{ kind: 'move', seconds: 300, kmh: 40, dir: 0 }]);
+    const last = before[before.length - 1];
+    // Same recording, one minute later, 60 km further: readings were missing in between.
+    const after = simulate([{ kind: 'move', seconds: 300, kmh: 40, dir: 0 }], {
+      startLat: last.lat + 60000 / 111320,
+      startLon: last.lon,
+      startTime: last.t + 60_000,
+    });
+    const a = analyze([...before, ...after], HOLD_ANALYZE);
+    expect(a.gaps).toHaveLength(1);
+    expect(a.gaps[0].distanceM).toBeGreaterThan(55000);
+    // Average and top speed stay realistic (riding at 40 km/h).
+    expect(a.stats.avgMovingSpeed * 3.6).toBeGreaterThan(35);
+    expect(a.stats.avgMovingSpeed * 3.6).toBeLessThan(45);
+    const seg = segment(a);
+    expect(seg.legs.every((l) => l.avgMovingSpeed * 3.6 < 60)).toBe(true);
+  });
+});

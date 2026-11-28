@@ -483,7 +483,9 @@ export function segment(
     const pauses = dwells.filter((d) => d.kind !== 'destination' && d.first >= dep && d.last <= arr);
     const pauseS = pauses.filter((d) => d.kind === 'pause').reduce((s, d) => s + d.durationS, 0);
     const trafficS = pauses.filter((d) => d.kind === 'traffic').reduce((s, d) => s + d.durationS, 0);
-    const gapS = a.gaps.filter((g) => g.from >= dep && g.to <= arr).reduce((s, g) => s + g.durationS, 0);
+    const legGaps = a.gaps.filter((g) => g.from >= dep && g.to <= arr);
+    const gapS = legGaps.reduce((s, g) => s + g.durationS, 0);
+    const gapDist = legGaps.reduce((s, g) => s + g.distanceM, 0);
     const durationS = (pts[arr].t - pts[dep].t) / 1000;
     const movingS = Math.max(0, durationS - pauseS - trafficS - gapS);
     const distance = pts[arr].dist - pts[dep].dist;
@@ -513,7 +515,8 @@ export function segment(
       pauseCount: pauses.filter((d) => d.kind === 'pause').length,
       trafficCount: pauses.filter((d) => d.kind === 'traffic').length,
       maxSpeed,
-      avgMovingSpeed: movingS > 0 ? distance / movingS : 0,
+      // Only measured travel: a jump over missing data has no real speed.
+      avgMovingSpeed: movingS > 0 ? Math.max(0, distance - gapDist) / movingS : 0,
       autoMode,
       pauses,
     });

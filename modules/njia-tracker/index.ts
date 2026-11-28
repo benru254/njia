@@ -5,33 +5,26 @@
  */
 import { requireOptionalNativeModule } from 'expo';
 
-export type TrackerMode = 'moving' | 'still';
-
 export interface TrackerStatus {
   enabled: boolean;
   running: boolean;
-  mode: TrackerMode;
-  modeSince: number;
+  /** When the recorder last started (ms). */
+  startedAt: number;
   lastFixT: number;
   lastFixAcc: number;
-  motionSensor: boolean;
 }
 
 export interface TrackerConfig {
   intervalMs?: number;
-  stillAfterMs?: number;
-  stillAfterPlaceMs?: number;
-  stillCheckMs?: number;
-  places?: Array<{ lat: number; lon: number; radiusM: number }>;
 }
 
 export interface TrackerEvent {
   t: number;
-  kind: 'start' | 'stop' | 'still' | 'moving' | 'settings' | 'info' | 'error' | string;
+  kind: 'start' | 'stop' | 'settings' | 'info' | 'error' | string;
   detail: string | null;
 }
 
-/** [id, t, lat, lon, acc, alt, spd, hdg, src] — src: 0 GPS, 1 "still here" check, 2 wake-up reading */
+/** [id, t, lat, lon, acc, alt, spd, hdg, src] — src: 0 GPS (1 and 2 came from version 1.0.3's GPS-off mode) */
 export type BufferRow = [number, number, number, number, number | null, number | null, number | null, number | null, number];
 
 interface NjiaTrackerNative {

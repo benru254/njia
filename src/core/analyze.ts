@@ -197,6 +197,8 @@ export function analyze(raw: RawPoint[], options: Partial<AnalyzeOptions> = {}):
   let dist = 0;
   let movingS = 0;
   let gapS = 0;
+  /** Distance covered by jumps over missing data: real travel, but not measured speed. */
+  let gapDist = 0;
   let lastDir: number | null = null;
   let minLat = Infinity;
   let maxLat = -Infinity;
@@ -219,9 +221,15 @@ export function analyze(raw: RawPoint[], options: Partial<AnalyzeOptions> = {}):
       if (sameStopAsPrev) {
         // Standing still: the small wobble of the GPS is not real travel.
         segD = 0;
-      } else if (dt > opts.gapS) {
+      } else if (
+        dt > opts.gapS ||
+        // A jump faster than any vehicle (allowing for both points' inaccuracy) means
+        // readings were missing in between, not that you really went that fast.
+        (dt > 0 && Math.max(0, segD - (p.acc ?? 0) - (prev.acc ?? 0)) / dt > opts.maxPlausibleSpeed)
+      ) {
         gapBefore = true;
         gapS += dt;
+        gapDist += segD;
         gaps.push({ from: i - 1, to: i, start: prev.t, end: p.t, durationS: dt, distanceM: segD });
       } else {
         movingS += dt;
@@ -287,7 +295,7 @@ export function analyze(raw: RawPoint[], options: Partial<AnalyzeOptions> = {}):
       movingS,
       stoppedS,
       gapS,
-      avgMovingSpeed: movingS > 0 ? dist / movingS : 0,
+      avgMovingSpeed: movingS > 0 ? (dist - gapDist) / movingS : 0,
       maxSpeed,
       pointCount: n,
       rawCount: raw.length,

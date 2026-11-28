@@ -14,16 +14,15 @@ import { tracker, NjiaTracker } from '../../modules/njia-tracker';
 import { getMeta, setMeta } from '../data/db';
 import { closePastDays, importBuffer } from '../data/importer';
 import { rebuildLegs } from '../data/legs';
-import { getRecordMode, getStillCheckS, setRecordMode } from '../data/mode';
-import { listPlaces } from '../data/places';
+import { getRecordMode, setRecordMode } from '../data/mode';
 import { clearActiveTrip, createTrip, deleteTrip, finishTrip, getActiveTripId, getTrip } from '../data/trips';
 import { LOCATION_TASK } from './task';
 
 export const INTERVAL_CHOICES = [
-  { seconds: 1, label: 'Every 1 second', hint: 'Most detail. Uses the most battery while moving.' },
-  { seconds: 3, label: 'Every 3 seconds', hint: 'Recommended. Smooth path, fair battery use.' },
+  { seconds: 1, label: 'Every 1 second', hint: 'Most detail.' },
+  { seconds: 3, label: 'Every 3 seconds', hint: 'Recommended. Smooth path.' },
   { seconds: 5, label: 'Every 5 seconds', hint: 'Good for driving.' },
-  { seconds: 10, label: 'Every 10 seconds', hint: 'Least battery while moving.' },
+  { seconds: 10, label: 'Every 10 seconds', hint: 'Less detail on corners.' },
 ];
 const DEFAULT_INTERVAL_S = 3;
 const INTERVAL_KEY = 'interval_s';
@@ -37,15 +36,10 @@ export async function setIntervalS(seconds: number): Promise<void> {
   await applySettings();
 }
 
-/** Send the current settings (and named places) to the recorder. Applies at once if it is running. */
+/** Send the current settings to the recorder. Applies at once if it is running. */
 export async function applySettings(): Promise<void> {
   if (!NjiaTracker) return;
-  const [intervalS, stillCheckS, places] = await Promise.all([getIntervalS(), getStillCheckS(), listPlaces()]);
-  NjiaTracker.configure({
-    intervalMs: intervalS * 1000,
-    stillCheckMs: stillCheckS * 1000,
-    places: places.map((p) => ({ lat: p.lat, lon: p.lon, radiusM: p.radiusM })),
-  });
+  NjiaTracker.configure({ intervalMs: (await getIntervalS()) * 1000 });
   if (NjiaTracker.getStatus().running) NjiaTracker.start('settings changed');
 }
 

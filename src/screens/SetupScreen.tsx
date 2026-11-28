@@ -7,7 +7,7 @@ import { formatDate, formatTime } from '../core/format';
 import { DEST_MIN_CHOICES } from '../core/segment';
 import { DEFAULT_SETTINGS, MODE_LABEL, Place, TravelMode, TripSettings } from '../core/types';
 import { rebuildAllLegs } from '../data/legs';
-import { RecordMode, STILL_CHECK_CHOICES, getRecordMode, getStillCheckS, setStillCheckS } from '../data/mode';
+import { RecordMode, getRecordMode } from '../data/mode';
 import { deletePlace, listPlaces } from '../data/places';
 import { getSettings, setDestMinS, setVehicle } from '../data/settings';
 import { getActiveTripId } from '../data/trips';
@@ -100,13 +100,11 @@ export function SetupScreen({ onBack }: Props) {
   const [places, setPlaces] = useState<Place[]>([]);
   const [working, setWorking] = useState<string | null>(null);
   const [mode, setMode] = useState<RecordMode>('manual');
-  const [stillCheck, setStillCheck] = useState(60);
   const [events, setEvents] = useState<TrackerEvent[]>([]);
   const [modeBusy, setModeBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     setMode(await getRecordMode());
-    setStillCheck(await getStillCheckS());
     if (NjiaTracker) setEvents(await NjiaTracker.getEvents(30).catch(() => []));
     setStatus(await getSetupStatus());
     setIntervalState(await getIntervalS());
@@ -121,7 +119,6 @@ export function SetupScreen({ onBack }: Props) {
     try {
       await job();
       await rebuildAllLegs();
-      await applySettings(); // the recorder saves battery sooner at named places
     } catch (err) {
       Alert.alert('Could not save', String((err as Error)?.message || err));
     }
@@ -200,7 +197,7 @@ export function SetupScreen({ onBack }: Props) {
         <Choice
           on={mode === 'always'}
           label="Always on"
-          hint="Records by itself all day, every day, also after the phone restarts. No Start or Stop. GPS switches off while you are still, to save battery. Each day is one recording, cut into trips."
+          hint="Records by itself all day, every day, also after the phone restarts. No Start or Stop. GPS stays on at full accuracy. Each day is one recording, cut into trips."
           onPress={() => chooseMode('always')}
         />
         <Choice
@@ -291,30 +288,11 @@ export function SetupScreen({ onBack }: Props) {
         </Text>
         <Btn label="Open Njia notification settings" onPress={run(openNotificationSettings)} style={styles.stepBtn} />
 
-        <Text style={[styles.section, { marginTop: 28 }]}>Battery saving when you are still</Text>
+        <Text style={[styles.section, { marginTop: 28 }]}>Battery</Text>
         <Text style={styles.intro}>
-          After 3 minutes without moving (1.5 minutes at a place you named, such as Home or Office) the GPS is switched
-          off. Njia then checks with Wi-Fi and the mobile network whether you have left, which uses very little power.
-          {NjiaTracker && NjiaTracker.getStatus().motionSensor
-            ? ' This phone also has a motion sensor, which wakes the GPS the moment you start moving.'
-            : ' This phone has no motion sensor, so leaving is noticed at the next check.'}{' '}
-          How often should it check?
-        </Text>
-        {STILL_CHECK_CHOICES.map((c) => (
-          <Choice
-            key={c.seconds}
-            on={c.seconds === stillCheck}
-            label={c.label}
-            hint={c.hint}
-            onPress={async () => {
-              setStillCheck(c.seconds);
-              await setStillCheckS(c.seconds);
-              await applySettings();
-            }}
-          />
-        ))}
-        <Text style={styles.intro}>
-          Tip: name your home and office (open a trip, tap a stop, “Name this place”). Njia saves battery sooner there.
+          GPS stays on at full accuracy the whole time Njia records, moving or not, so no part of a trip is missed. On
+          Always on that is all day: GPS will be one of the biggest battery users on the phone. A charger at home and
+          at the office keeps it going. Recording every 5 or 10 seconds (below) saves a little.
         </Text>
 
         <Text style={[styles.section, { marginTop: 28 }]}>When does a stop end a trip?</Text>
@@ -376,7 +354,7 @@ export function SetupScreen({ onBack }: Props) {
           </View>
         ))}
 
-        <Text style={[styles.section, { marginTop: 28 }]}>How often to record a point while moving</Text>
+        <Text style={[styles.section, { marginTop: 28 }]}>How often to record a point</Text>
         {recording ? <Text style={styles.intro}>A change here applies from your next trip.</Text> : null}
         {INTERVAL_CHOICES.map((c) => (
           <Choice

@@ -34,9 +34,9 @@ open the app any time to see your trips. Each day is one recording, cut into tri
 
 **Manual:** tap **Start recording**, then **Stop and save**.
 
-How it saves battery: after 3 minutes without moving (1.5 minutes at a place you named, like Home or Office) the GPS
-switches off. A cheap Wi-Fi / mobile-network check every minute, and the phone's motion sensor, switch it back on when
-you leave.
+GPS stays on at full accuracy the whole time it records, moving or not. Accurate data comes before battery life.
+(Version 1.0.3 switched GPS off when you were still; on the road that caused straight-line jumps and impossible
+speeds, so it was removed in 1.0.4.)
 
 How it keeps your data: every GPS point is written to storage the moment it arrives, so a dead battery loses at most
 the point being written. The recorder runs on its own (it does not need the app open) and is restarted after a phone
@@ -101,8 +101,8 @@ The viewer also opens `.gpx` files from other GPS apps. Nothing is uploaded: the
 | | |
 |---|---|
 | Accuracy | About 3–5 m under open sky. 10–30 m between tall buildings, inside vehicles or indoors. |
-| Battery | GPS is on only while you move. At home and in the office it is off (Wi-Fi / network checks only). |
-| Start of a trip | Phones without a motion sensor notice you leaving at the next check (up to 1 minute): the first few hundred metres of a trip are then drawn as a straight line. |
+| Battery | GPS is on all the time while recording. On Always on it is one of the biggest battery users on the phone: keep a charger at home and the office. |
+| Old 1.0.3 days | Recordings made with 1.0.3 keep their straight-line jumps (the data was never recorded). They now show as "No data" with a jump distance, and no longer give fake speeds. |
 | Phone switched off | Nothing can record while the phone is off. After it restarts, Njia continues by itself once the phone is unlocked the first time. |
 | Street map background | Needs internet the first time you view an area. The path, speeds and stops never need internet. |
 | Phones that kill apps | Tecno, Infinix, itel, Xiaomi, Oppo, Vivo and Huawei need the extra steps shown in Setup. |
@@ -118,7 +118,8 @@ The viewer also opens `.gpx` files from other GPS apps. Nothing is uploaded: the
 - Part 1: offline recording in the background, map view, speed colours, arrows, replay, speed chart, GPX, PC viewer, automatic APK build
 - Part 2: a day cut into separate trips, destinations vs pauses vs traffic, one-tap Split / Join, named places, Google Maps and Navigate buttons, walking / vehicle per trip
 
-- Part 3: Always on (no Start / Stop), automatic GPS-off when still, restart after phone restart, data saved on every point, hideable notification, Google Earth / My Maps export, trips in Google Maps
+- Part 3: Always on (no Start / Stop), restart after phone restart, data saved on every point, hideable notification, Google Earth / My Maps export, trips in Google Maps
+- 1.0.4: GPS-off battery saving removed (accuracy first); jumps over missing data no longer count as speed
 
 **Not built yet (ideas)**
 - Automatic upload when the phone is on Wi-Fi, to your PC and to a cloud database
@@ -142,7 +143,7 @@ Folder map:
 App.tsx, index.ts      app entry (index.ts registers the background GPS job first)
 src/core/              pure logic: filtering, stops, cutting a day into trips (segment.ts), GPX. No phone code. Tested.
 src/data/              the on-phone database and file export
-modules/njia-tracker/  the native recorder (Kotlin): runs without the app, power modes, restart after reboot
+modules/njia-tracker/  the native recorder (Kotlin): runs without the app, full-accuracy GPS, restart after reboot
 src/data/importer.ts   moves points from the recorder into recordings (one per day in Always on)
 src/tracking/          switching recording on/off, Android permissions
 src/screens/           Home, Trip, Setup

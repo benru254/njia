@@ -11,7 +11,6 @@ import { importBuffer } from '../data/importer';
 import { rebuildAllLegs, rebuildLegs } from '../data/legs';
 import { savePlace } from '../data/places';
 import { setDestMinS } from '../data/settings';
-import { applySettings } from '../tracking/recorder';
 import { TripRow, deleteTrip, getActiveTripId, getTrip } from '../data/trips';
 import { DATA_MARKER, VIEWER_HTML } from '../generated/viewerHtml';
 import { C, S } from '../theme';
@@ -118,7 +117,6 @@ export function TripScreen({ tripId, focusT, onBack }: Props) {
         persist(async () => {
           await savePlace(String(msg.name ?? ''), Number(msg.lat), Number(msg.lon));
           await rebuildAllLegs(); // a named place can change trips on other days too
-          await applySettings(); // the recorder saves battery sooner at named places
         });
         break;
       case 'settings':
